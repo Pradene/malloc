@@ -2,13 +2,16 @@
 #define MALLOC_H
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
-#define PAGE_SIZE 4096
-#define ALIGNMENT 8
-#define ALIGN(size) (((size) + (ALIGNMENT - 1)) & ~(ALIGNMENT - 1))
+#define PAGE_SIZE sysconf(_SC_PAGESIZE)
+#define ALIGN(size, alignment) (((size) + (alignment - 1)) & ~(alignment - 1))
+
+// Minimum block size (header + minimum user data)
+#define MIN_BLOCK_SIZE (sizeof(Block) + 1)
 
 typedef struct Page {
   void *start;          // pointer returned by mmap()
