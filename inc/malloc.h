@@ -22,9 +22,8 @@ typedef struct Page {
 } Page;
 
 typedef struct Block {
-  size_t size;  // size of the data portion
-  int free;     // 1 = free, 0 = in use
-  int is_large; // 1 = allocated directly via mmap
+  size_t size; // size of the data portion
+  int free;    // 1 = free, 0 = in use
   struct Block *next;
 } Block;
 

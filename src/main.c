@@ -6,7 +6,6 @@ Block *block_create(void *ptr, size_t size) {
   Block *block = (Block *)ptr;
   block->size = size - sizeof(Block);
   block->free = 1;
-  block->is_large = 0;
   block->next = NULL;
   return (block);
 }
@@ -49,7 +48,6 @@ void block_split(Block *block, size_t size) {
     // Initialize new block
     new_block->size = remaining - sizeof(Block);
     new_block->free = 1;
-    new_block->is_large = 0;
     new_block->next = block->next;
 
     // Update current block
@@ -138,14 +136,17 @@ void ft_free(void *ptr) {
 }
 
 int main() {
-  char *b1 = (char *)ft_malloc(1024);
-  char *b2 = (char *)ft_malloc(1024);
+  char *b1 = (char *)ft_malloc(2048);
+  char *b2 = (char *)ft_malloc(2048);
+  char *b3 = (char *)ft_malloc(1024);
 
   sprintf(b1, "Hello %s\n", "World");
   sprintf(b2, "Hello %s\n", "World");
+  sprintf(b3, "Hello %s\n", "World");
 
   ft_free(b1);
   ft_free(b2);
+  ft_free(b3);
 
   Page *page = NULL;
   while (base) {
