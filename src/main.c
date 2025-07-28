@@ -2,21 +2,48 @@
 
 Page *base = NULL;
 
-Block *block_create(void *ptr, size_t size) {
-  Block *block = (Block *)ptr;
-  block->size = size;
-  block->free = 1;
-  block->next = NULL;
-  return (block);
+PageType get_page_type(size_t size) {
+  if (size <= TINY_MAX) {
+    return (TINY);
+  } else if (size <= SMALL_MAX) {
+    return (SMALL);
+  } else {
+    return (LARGE);
+  }
+}
+
+// Get the string representation of page type
+const char *get_page_type_str(PageType type) {
+  switch (type) {
+  case TINY:
+    return ("TINY");
+  case SMALL:
+    return ("SMALL");
+  case LARGE:
+    return ("LARGE");
+  default:
+    return ("UNKNOWN");
+  }
 }
 
 // Create a new page with initial free block
-Page *page_get(size_t size) {
+Page *get_page(PageType type, size_t size) {
   // Calculate total size needed
-  size_t total_size = sizeof(Page) + sizeof(Block) + size;
+  switch (type) {
+  case TINY:
+    size = TINY_SIZE;
+    break;
+  case SMALL:
+    size = SMALL_SIZE;
+    break;
+  default:
+    break;
+  }
+
+  size += sizeof(Page);
 
   // Round up to page size
-  size_t page_size = ALIGN(total_size, sysconf(_SC_PAGESIZE));
+  size_t page_size = ALIGN(size, sysconf(_SC_PAGESIZE));
 
   // Allocate the page using mmap
   int prot = PROT_READ | PROT_WRITE;
@@ -31,14 +58,22 @@ Page *page_get(size_t size) {
   page->start = memory + sizeof(Page);
   page->size = page_size;
   page->next = NULL;
-  page->blocks = block_create(page->start, page_size - ALIGN(sizeof(Page), 8));
+  page->type = type;
 
-  printf("%p: %zu bytes memory page allocated\n", page, page_size);
+  Block *block = page->start;
+  block->size = page_size - ALIGN(sizeof(Page), 8);
+  block->free = 1;
+  block->next = NULL;
+
+  page->blocks = block;
+
+  printf("%p: %s page (%zu bytes)\n", page, get_page_type_str(page->type),
+         page_size);
 
   return (page);
 }
 
-void block_split(Block *block, size_t size) {
+void split_block(Block *block, size_t size) {
   size_t remaining = block->size - size;
   if (remaining >= sizeof(Block) + 1) {
     // Create new block in the remaining space
@@ -62,44 +97,46 @@ void block_split(Block *block, size_t size) {
   }
 }
 
-Block *block_find(size_t size) {
+Block *get_free_block_in_page_type(PageType type, size_t size) {
   Page *page = base;
   while (page != NULL) {
-    Block *block = page->blocks;
-    while (block != NULL) {
-      if (block->free && block->size >= size) {
-        printf("Found free block: %p (%zu)\n", block, block->size);
-        return (block);
+    if (page->type == type) {
+      Block *block = page->blocks;
+      while (block != NULL) {
+        if (block->free && block->size >= size) {
+          printf("Found free block: %p (%zu) in %s page\n", block, block->size,
+                 get_page_type_str(type));
+          return (block);
+        }
+        block = block->next;
       }
-      block = block->next;
     }
     page = page->next;
   }
   return (NULL);
 }
-
 void *ft_malloc(size_t size) {
   if (size == 0) {
     return (NULL);
   }
 
-  printf("Requested size: %zu\n", size);
+  printf("%zu bytes requested\n", size);
 
   // Align size
   size = size + sizeof(Block);
   size = ALIGN(size, 8);
 
+  PageType type = get_page_type(size);
+
   // Try to find existing free block
-  Block *block = block_find(size);
+  Block *block = get_free_block_in_page_type(type, size);
   if (block != NULL) {
-    block_split(block, size);
+    split_block(block, size);
     return (void *)((char *)block + sizeof(Block));
   }
 
-  printf("No free blocks found. Creating new page...\n");
-
   // Create new page
-  Page *page = page_get(size);
+  Page *page = get_page(type, size);
   if (page == NULL) {
     return (NULL);
   }
@@ -111,7 +148,7 @@ void *ft_malloc(size_t size) {
   // Use first block in new page
   block = page->blocks;
   if (block->free && block->size >= size) {
-    block_split(block, size);
+    split_block(block, size);
     return (void *)((char *)block + sizeof(Block));
   }
 
@@ -133,7 +170,7 @@ void ft_free(void *ptr) {
   }
 }
 
-void page_print(Page *page) {
+void print_page(Page *page) {
   if (page == NULL) {
     return;
   }
@@ -141,45 +178,42 @@ void page_print(Page *page) {
   Block *block = page->blocks;
   printf("%p\n", page);
   while (block != NULL) {
-    // if (block->free == 1) {
-    //   block = block->next;
-    //   continue;
-    // }
-
     size_t size = block->size;
     void *start = block;
     void *end = start + size;
-    printf("%p -> %p : %zu bytes\n", start, end, size);
+    printf("%p -> %p : %zu bytes %s\n", start, end, size,
+           block->free ? "(Free)" : "");
     block = block->next;
   }
 }
 
-void memory_print() {
-  if (base == NULL) {
-    return;
-  }
-
+void print_mem() {
   Page *page = base;
   while (page != NULL) {
-    page_print(base);
+    print_page(page);
     page = page->next;
   }
 }
 
 int main() {
-  printf("Size of Block: %zu\n", sizeof(Block));
-  printf("Size of Page: %zu\n", sizeof(Page));
-  printf("\n");
+  printf("%#08lx : Size of Page\n", sizeof(Page));
+  printf("%#08lx : Size of Block\n", sizeof(Block));
 
-  char *b1 = (char *)ft_malloc(2048);
-  char *b2 = (char *)ft_malloc(2048);
-  char *b3 = (char *)ft_malloc(1024);
+  void *p1 = ft_malloc(2048);
+  void *p2 = ft_malloc(2048);
+  void *p3 = ft_malloc(2048);
+  void *p4 = ft_malloc(2048);
+  void *p5 = ft_malloc(64);
+  void *p6 = ft_malloc(8192);
 
-  memory_print();
+  print_mem();
 
-  ft_free(b1);
-  ft_free(b2);
-  ft_free(b3);
+  ft_free(p1);
+  ft_free(p2);
+  ft_free(p3);
+  ft_free(p4);
+  ft_free(p5);
+  ft_free(p6);
 
   Page *page = NULL;
   while (base) {

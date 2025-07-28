@@ -1,6 +1,6 @@
 NAME     = malloc
 CC       = cc
-CFLAGS   = -Wall -Wextra -Werror -Iinc
+CFLAGS   = -Wall -Wextra -Werror -I inc -g
 SRC_DIR  = src
 OBJ_DIR  = obj
 
