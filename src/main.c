@@ -1,4 +1,5 @@
 #include "malloc.h"
+#include <sys/resource.h>
 
 Page *base = NULL;
 
@@ -61,14 +62,17 @@ Page *get_page(PageType type, size_t size) {
   page->type = type;
 
   Block *block = page->start;
-  block->size = page_size - ALIGN(sizeof(Page), 8);
+  size = page_size - sizeof(Page);
+  block->size = ALIGN(size, 16);
   block->free = 1;
   block->next = NULL;
 
   page->blocks = block;
 
-  printf("%p: %s page (%zu bytes)\n", page, get_page_type_str(page->type),
-         page_size);
+  if (DEBUG) {
+    printf("%p: %s page (%zu bytes)\n", page, get_page_type_str(page->type),
+           page_size);
+  }
 
   return (page);
 }
@@ -89,11 +93,15 @@ void split_block(Block *block, size_t size) {
     block->free = 0;
     block->next = new_block;
 
-    printf("%p -> %p\n", block, new_block);
+    if (DEBUG) {
+      printf("%p -> %p\n", block, new_block);
+    }
   } else {
     // Not enough space to split, use entire block
     block->free = 0;
-    printf("Used entire block: %p (%zu)\n", block, block->size);
+    if (DEBUG) {
+      printf("Used entire block: %p (%zu)\n", block, block->size);
+    }
   }
 }
 
@@ -104,8 +112,6 @@ Block *get_free_block_in_page_type(PageType type, size_t size) {
       Block *block = page->blocks;
       while (block != NULL) {
         if (block->free && block->size >= size) {
-          printf("Found free block: %p (%zu) in %s page\n", block, block->size,
-                 get_page_type_str(type));
           return (block);
         }
         block = block->next;
@@ -120,11 +126,13 @@ void *ft_malloc(size_t size) {
     return (NULL);
   }
 
-  printf("%zu bytes requested\n", size);
+  if (DEBUG) {
+    printf("%zu bytes requested\n", size);
+  }
 
   // Align size
   size = size + sizeof(Block);
-  size = ALIGN(size, 8);
+  size = ALIGN(size, 16);
 
   PageType type = get_page_type(size);
 
@@ -161,7 +169,9 @@ void ft_free(void *ptr) {
     Block *block = page->blocks;
     while (block) {
       if ((char *)block == (char *)(ptr - sizeof(Block))) {
-        printf("%p: Freed\n", block);
+        if (DEBUG) {
+          printf("%p: Freed\n", block);
+        }
         block->free = 1;
       }
       block = block->next;
@@ -176,7 +186,7 @@ void print_page(Page *page) {
   }
 
   Block *block = page->blocks;
-  printf("%p\n", page);
+  printf("%s : %p\n", get_page_type_str(page->type), page);
   while (block != NULL) {
     size_t size = block->size;
     void *start = block;
@@ -196,8 +206,12 @@ void print_mem() {
 }
 
 int main() {
-  printf("%#08lx : Size of Page\n", sizeof(Page));
-  printf("%#08lx : Size of Block\n", sizeof(Block));
+  struct rlimit limit = {0};
+  getrlimit(RLIMIT_AS, &limit);
+  if (DEBUG) {
+    printf("Current %zu\n", limit.rlim_cur);
+    printf("Max %zu\n", limit.rlim_max);
+  }
 
   void *p1 = ft_malloc(2048);
   void *p2 = ft_malloc(2048);

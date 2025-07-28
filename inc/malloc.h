@@ -5,7 +5,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
+#include <sys/resource.h>
 #include <unistd.h>
+
+#define DEBUG 0
 
 #define ALIGN(size, alignment) (((size) + (alignment - 1)) & ~(alignment - 1))
 
