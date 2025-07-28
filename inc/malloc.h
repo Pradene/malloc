@@ -7,18 +7,19 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#define PAGE_SIZE sysconf(_SC_PAGESIZE)
 #define ALIGN(size, alignment) (((size) + (alignment - 1)) & ~(alignment - 1))
 
-// Minimum block size (header + minimum user data)
-#define MIN_BLOCK_SIZE (sizeof(Block) + 1)
+#define TINY_MAX 64
+#define SMALL_MAX 1024
+
+#define TINY_ZONE_SIZE (TINY_MAX + sizeof(Block)) * 128
+#define SMALL_ZONE_SIZE (SMALL_MAX + sizeof(Block)) * 128
 
 typedef struct Page {
   void *start;          // pointer returned by mmap()
   size_t size;          // total page size
   struct Block *blocks; // linked list of blocks inside this page
   struct Page *next;
-  struct Page *prev;
 } Page;
 
 typedef struct Block {
