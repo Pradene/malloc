@@ -1,6 +1,7 @@
 #ifndef MALLOC_H
 #define MALLOC_H
 
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,8 +30,8 @@ typedef struct Page {
 } Page;
 
 typedef struct Block {
-  size_t size; // size of the data portion
-  int free;    // 1 = free, 0 = in use
+  size_t size;
+  bool free;
   struct Block *next;
 } Block;
 
