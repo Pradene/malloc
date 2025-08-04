@@ -2,6 +2,25 @@
 
 Page *base = NULL;
 
+Block *get_block_from_ptr(void *ptr) {
+  Page *page = base;
+  while (page) {
+    Block *block = page->blocks;
+    while (block) {
+      if (block == (Block *)(ptr - sizeof(Block))) {
+        return (block);
+      }
+      block = block->next;
+    }
+    page = page->next;
+  }
+  return (NULL);
+}
+
+bool is_valid_ptr(void *ptr) {
+  return (get_block_from_ptr(ptr) != NULL ? true : false);
+}
+
 PageType get_page_type(size_t size) {
   if (size <= TINY_MAX) {
     return (TINY);
@@ -146,21 +165,6 @@ void print_mem() {
   }
 }
 
-bool is_valid_ptr(void *ptr) {
-  Page *page = base;
-  while (page) {
-    Block *block = page->blocks;
-    while (block) {
-      if ((char *)block == (char *)(ptr - sizeof(Block))) {
-        return (true);
-      }
-      block = block->next;
-    }
-    page = page->next;
-  }
-  return (false);
-}
-
 void *ft_malloc(size_t size) {
   if (size == 0) {
     return (NULL);
@@ -204,85 +208,57 @@ void *ft_malloc(size_t size) {
 }
 
 void ft_free(void *ptr) {
-  if (is_valid_ptr(ptr) == false) {
+  Block *block = get_block_from_ptr(ptr);
+  if (block == NULL) {
     return;
   }
-
-  Block *block = (Block *)(ptr - sizeof(Block));
   block->free = true;
 }
 
 void *ft_realloc(void *ptr, size_t size) {
-  // Handle edge cases
+  // If ptr is NULL, behave like malloc
   if (ptr == NULL) {
     return (ft_malloc(size));
   }
 
+  // If size is 0, behave like free
   if (size == 0) {
     ft_free(ptr);
     return (NULL);
   }
 
-  if (!is_valid_ptr(ptr)) {
+  Block *block;
+  if ((block = get_block_from_ptr(ptr)) == NULL) {
     return (NULL);
   }
 
-  Block *block = (Block *)(ptr - sizeof(Block));
-  size_t old_size = block->size - sizeof(Block);
+  // Determine what page type the new size needs
+  PageType new_type = get_page_type(size);
 
-  // Align the new size
-  size_t new_size = size + sizeof(Block);
-  new_size = ALIGN(new_size, 16);
+  // Determine what page type the current block is in
+  PageType current_type = get_page_type(block->size);
 
-  // If the new size is smaller or equal, we can reuse the current block
-  if (new_size <= block->size) {
-    // Try to split the block if there's enough remaining space
-    if (block->size - new_size >= sizeof(Block) + 1) {
-      split_block(block, new_size);
+  // If the new size fits in the current block and same page type, try to resize
+  if (new_type == current_type && block->size >= size) {
+    // Can potentially split the block if it's much larger
+    if (block->size >= size + sizeof(Block)) {
+      split_block(block, size);
     }
     return (ptr);
   }
 
-  // Check if we can expand into the next block
-  Block *next = block->next;
-  if (next != NULL && next->free) {
-    size_t combined_size = block->size + next->size;
-    if (combined_size >= new_size) {
-      // Merge with next block
-      block->size = combined_size;
-      block->next = next->next;
-
-      // Split if necessary
-      if (combined_size - new_size >= sizeof(Block) + 1) {
-        split_block(block, new_size);
-      } else {
-        block->free = false;
-      }
-
-      if (DEBUG) {
-        printf("Expanded block %p to %zu bytes\n", block, block->size);
-      }
-
-      return (ptr);
-    }
-  }
-
-  // Need to allocate a new block
+  // Need to allocate new memory (different page type or not enough space)
   void *new_ptr = ft_malloc(size);
   if (new_ptr == NULL) {
     return (NULL);
   }
 
-  // Copy data from old block to new block
-  size_t copy_size = (size < old_size) ? size : old_size;
+  // Copy the data (copy the minimum of old size and new size)
+  size_t copy_size = (block->size < size) ? block->size : size;
   memcpy(new_ptr, ptr, copy_size);
 
   // Free the old block
   ft_free(ptr);
-
-  if (DEBUG) {
-    printf("%p -> %p (Reallocated %zu bytes)\n", ptr, new_ptr, size);
-  }
 
   return (new_ptr);
 }
