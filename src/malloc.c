@@ -2,9 +2,9 @@
 
 Block *get_block_from_ptr(void *ptr) {
   Page *page = base;
-  while (page) {
+  while (page != NULL) {
     Block *block = page->blocks;
-    while (block) {
+    while (block != NULL) {
       if (block == (Block *)(ptr - sizeof(Block))) {
         return (block);
       }
