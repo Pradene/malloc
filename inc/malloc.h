@@ -29,6 +29,8 @@ typedef struct Page {
   struct Page *next;
 } Page;
 
+Page *base = NULL;
+
 typedef struct Block {
   size_t size;
   bool free;

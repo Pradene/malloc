@@ -1,7 +1,5 @@
 #include "malloc.h"
 
-Page *base = NULL;
-
 Block *get_block_from_ptr(void *ptr) {
   Page *page = base;
   while (page) {
