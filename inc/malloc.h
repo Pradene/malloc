@@ -38,5 +38,6 @@ typedef struct Block {
 void *ft_malloc(size_t size);
 void *ft_realloc();
 void ft_free();
+void print_mem();
 
 #endif

@@ -1,23 +1,28 @@
-NAME     = malloc
-CC       = cc
-CFLAGS   = -Wall -Wextra -Werror -I inc -g
-SRC_DIR  = src
-OBJ_DIR  = obj
+ifeq ($(HOSTTYPE),)
+	HOSTTYPE := $(shell uname -m)_$(shell uname -s)
+endif
 
-SRCS     = $(wildcard $(SRC_DIR)/*.c)
-OBJS     = $(patsubst $(SRC_DIR)/%.c,$(OBJ_DIR)/%.o,$(SRCS))
+NAME     = libft_malloc_$(HOSTTYPE).so
+CC       = cc
+CFLAGS   = -Wall -Wextra -Werror -Iinc -g
+SRCS_DIR = src
+OBJS_DIR = obj
+TEST_DIR = test
+
+SRCS     = $(wildcard $(SRCS_DIR)/*.c)
+OBJS     = $(patsubst $(SRCS_DIR)/%.c,$(OBJS_DIR)/%.o,$(SRCS))
 
 all: $(NAME)
 
 $(NAME): $(OBJS)
-	$(CC) $(CFLAGS) $(OBJS) -o $(NAME)
+	$(CC) $(CFLAGS) $(OBJS) -shared -o $(NAME)
 
-$(OBJ_DIR)/%.o: $(SRC_DIR)/%.c
-	@mkdir -p $(OBJ_DIR)
-	$(CC) $(CFLAGS) -c $< -o $@
+$(OBJS_DIR)/%.o: $(SRCS_DIR)/%.c
+	@mkdir -p $(OBJS_DIR)
+	$(CC) $(CFLAGS) -c -fPIC $< -o $@
 
 clean:
-	rm -rf $(OBJ_DIR)
+	rm -rf $(OBJS_DIR)
 
 fclean: clean
 	rm -f $(NAME)
