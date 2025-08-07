@@ -1,4 +1,15 @@
 #include "malloc.h"
+#include <unistd.h>
+
+size_t get_os_page_size() {
+#if defined(__APPLE__) || defined(__MACH__)
+  return (getpagesize());
+#elif defined(unix) || defined(__unix) || defined(__unix__)
+  return (sysconf(_SC_PAGESIZE));
+#else
+  return (4096);
+#endif
+}
 
 Block *get_block_from_ptr(void *ptr) {
   Page *page = base;
@@ -60,7 +71,7 @@ Page *get_page(PageType type, size_t size) {
   size += sizeof(Page);
 
   // Round up to page size
-  size_t page_size = ALIGN(size, sysconf(_SC_PAGESIZE));
+  size_t page_size = ALIGN(size, get_os_page_size());
 
   // Allocate the page using mmap
   int prot = PROT_READ | PROT_WRITE;

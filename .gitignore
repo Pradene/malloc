@@ -1,3 +1,4 @@
 /libft_malloc*.so
 /compile_commands.json
 /obj/
+/.cache/
