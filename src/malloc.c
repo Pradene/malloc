@@ -160,7 +160,7 @@ void show_alloc_mem() {
   }
 }
 
-void *ft_malloc(size_t size) {
+void *malloc(size_t size) {
   if (size == 0) {
     return (NULL);
   }
@@ -195,7 +195,7 @@ void *ft_malloc(size_t size) {
   return (NULL);
 }
 
-void ft_free(void *ptr) {
+void free(void *ptr) {
   Block *block = get_block_from_ptr(ptr);
   if (block == NULL) {
     return;
@@ -203,15 +203,15 @@ void ft_free(void *ptr) {
   block->free = true;
 }
 
-void *ft_realloc(void *ptr, size_t size) {
+void *realloc(void *ptr, size_t size) {
   // If ptr is NULL, behave like malloc
   if (ptr == NULL) {
-    return (ft_malloc(size));
+    return (malloc(size));
   }
 
   // If size is 0, behave like free
   if (size == 0) {
-    ft_free(ptr);
+    free(ptr);
     return (NULL);
   }
 
@@ -236,7 +236,7 @@ void *ft_realloc(void *ptr, size_t size) {
   }
 
   // Need to allocate new memory (different zone type or not enough space)
-  void *new_ptr = ft_malloc(size);
+  void *new_ptr = malloc(size);
   if (new_ptr == NULL) {
     return (NULL);
   }
@@ -246,7 +246,7 @@ void *ft_realloc(void *ptr, size_t size) {
   memcpy(new_ptr, ptr, copy_size);
 
   // Free the old block
-  ft_free(ptr);
+  free(ptr);
 
   return (new_ptr);
 }

@@ -3,12 +3,12 @@
 
 #include <stdbool.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <sys/resource.h>
 #include <unistd.h>
 
+#define ALIGNMENT 16
 #define ALIGN(size, alignment) (((size) + (alignment - 1)) & ~(alignment - 1))
 
 #define TINY_BLOCK_MAX_SIZE 128
@@ -19,25 +19,25 @@
 
 typedef enum { TINY, SMALL, LARGE } ZoneType;
 
-typedef struct Zone {
-  void *start; // pointer returned by mmap()
-  size_t size; // total page size
-  ZoneType type;
-  struct Block *blocks; // linked list of blocks inside this page
-  struct Zone *next;
-} Zone;
-
-Zone *base = NULL;
-
 typedef struct Block {
   bool free;
   size_t size;
   struct Block *next;
 } Block;
 
-void *ft_malloc(size_t size);
-void *ft_realloc(void *ptr, size_t size);
-void ft_free(void *ptr);
+typedef struct Zone {
+  void *start; // pointer returned by mmap()
+  size_t size; // total page size
+  ZoneType type;
+  Block *blocks; // linked list of blocks inside this page
+  struct Zone *next;
+} Zone;
+
+Zone *base = NULL;
+
+void *malloc(size_t size);
+void *realloc(void *ptr, size_t size);
+void free(void *ptr);
 void show_alloc_mem();
 
 #endif
