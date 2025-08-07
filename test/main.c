@@ -11,11 +11,11 @@ int main() {
   void *p1 = ft_malloc(2048);
   void *p2 = ft_malloc(2048);
   void *p3 = ft_malloc(2048);
-  void *p4 = ft_malloc(2048);
-  void *p5 = ft_malloc(64);
-  void *p6 = ft_malloc(8192);
+  void *p4 = ft_malloc(2000);
+  void *p5 = ft_malloc(80);
+  void *p6 = ft_malloc(800);
 
-  print_mem();
+  show_alloc_mem();
 
   ft_free(p1);
   ft_free(p2);

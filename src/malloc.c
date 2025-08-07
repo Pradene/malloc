@@ -149,7 +149,7 @@ Block *get_free_block_in_page_type(PageType type, size_t size) {
   return (NULL);
 }
 
-void print_page(Page *page) {
+void show_alloc_page(Page *page) {
   if (page == NULL) {
     return;
   }
@@ -157,19 +157,21 @@ void print_page(Page *page) {
   Block *block = page->blocks;
   printf("%s : %p\n", get_page_type_str(page->type), page);
   while (block != NULL) {
+    if (block->free == true) {
+      break;
+    }
     size_t size = block->size;
     void *start = block;
     void *end = start + size;
-    printf("%p -> %p : %zu bytes %s\n", start, end, size,
-           block->free ? "(Free)" : "");
+    printf("%p -> %p : %zu bytes\n", start, end, size);
     block = block->next;
   }
 }
 
-void print_mem() {
+void show_alloc_mem() {
   Page *page = base;
   while (page != NULL) {
-    print_page(page);
+    show_alloc_page(page);
     page = page->next;
   }
 }
@@ -185,7 +187,6 @@ void *ft_malloc(size_t size) {
 
   // Align size
   size = size + sizeof(Block);
-  size = ALIGN(size, 16);
 
   PageType type = get_page_type(size);
 
