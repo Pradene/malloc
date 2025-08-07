@@ -3,17 +3,13 @@
 int main() {
   struct rlimit limit = {0};
   getrlimit(RLIMIT_AS, &limit);
-  if (DEBUG) {
-    printf("Current %zu\n", limit.rlim_cur);
-    printf("Max %zu\n", limit.rlim_max);
-  }
 
   void *p1 = ft_malloc(2048);
   void *p2 = ft_malloc(2048);
   void *p3 = ft_malloc(2048);
   void *p4 = ft_malloc(2000);
   void *p5 = ft_malloc(80);
-  void *p6 = ft_malloc(800);
+  void *p6 = ft_malloc(104);
 
   show_alloc_mem();
 
@@ -24,11 +20,11 @@ int main() {
   ft_free(p5);
   ft_free(p6);
 
-  Page *page = NULL;
+  Zone *zone = NULL;
   while (base) {
-    page = base->next;
+    zone = base->next;
     munmap(base, base->size);
-    base = page;
+    base = zone;
   }
   return (0);
 }

@@ -1,5 +1,4 @@
 #include "malloc.h"
-#include <unistd.h>
 
 size_t get_os_page_size() {
 #if defined(__APPLE__) || defined(__MACH__)
@@ -12,36 +11,34 @@ size_t get_os_page_size() {
 }
 
 Block *get_block_from_ptr(void *ptr) {
-  Page *page = base;
-  while (page != NULL) {
-    Block *block = page->blocks;
+  Zone *zone = base;
+  while (zone != NULL) {
+    Block *block = zone->blocks;
     while (block != NULL) {
       if (block == (Block *)(ptr - sizeof(Block))) {
         return (block);
       }
       block = block->next;
     }
-    page = page->next;
+    zone = zone->next;
   }
   return (NULL);
 }
 
-bool is_valid_ptr(void *ptr) {
-  return (get_block_from_ptr(ptr) != NULL ? true : false);
-}
+bool is_valid_ptr(void *ptr) { return (get_block_from_ptr(ptr) != NULL); }
 
-PageType get_page_type(size_t size) {
-  if (size <= TINY_MAX) {
+ZoneType get_zone_type(size_t size) {
+  if (size <= TINY_BLOCK_MAX_SIZE) {
     return (TINY);
-  } else if (size <= SMALL_MAX) {
+  } else if (size <= SMALL_BLOCK_MAX_SIZE) {
     return (SMALL);
   } else {
     return (LARGE);
   }
 }
 
-// Get the string representation of page type
-const char *get_page_type_str(PageType type) {
+// Get the string representation of zone type
+const char *get_zone_type_str(ZoneType type) {
   switch (type) {
   case TINY:
     return ("TINY");
@@ -54,57 +51,51 @@ const char *get_page_type_str(PageType type) {
   }
 }
 
-// Create a new page with initial free block
-Page *get_page(PageType type, size_t size) {
+// Create a new zone with initial free block
+Zone *get_zone(ZoneType type, size_t size) {
   // Calculate total size needed
   switch (type) {
   case TINY:
-    size = TINY_SIZE;
+    size = TINY_ZONE_SIZE;
     break;
   case SMALL:
-    size = SMALL_SIZE;
+    size = SMALL_ZONE_SIZE;
     break;
   default:
     break;
   }
 
-  size += sizeof(Page);
+  size += sizeof(Zone);
 
   // Round up to page size
-  size_t page_size = ALIGN(size, get_os_page_size());
+  size_t zone_size = ALIGN(size, get_os_page_size());
 
   // Allocate the page using mmap
   int prot = PROT_READ | PROT_WRITE;
   int flags = MAP_PRIVATE | MAP_ANONYMOUS;
-  void *memory = mmap(NULL, page_size, prot, flags, -1, 0);
+  void *memory = mmap(NULL, zone_size, prot, flags, -1, 0);
   if (memory == MAP_FAILED) {
     return (NULL);
   }
 
-  // Place Page struct at the beginning
-  Page *page = (Page *)memory;
-  page->start = memory + sizeof(Page);
-  page->size = page_size;
-  page->next = NULL;
-  page->type = type;
+  // Place Zone struct at the beginning
+  Zone *zone = (Zone *)memory;
+  zone->start = memory + sizeof(Zone);
+  zone->size = zone_size;
+  zone->next = NULL;
+  zone->type = type;
 
-  Block *block = page->start;
-  size = page_size - sizeof(Page);
-  block->size = ALIGN(size, 16);
+  Block *block = zone->start;
+  block->size = zone_size - sizeof(Zone);
   block->free = true;
   block->next = NULL;
 
-  page->blocks = block;
+  zone->blocks = block;
 
-  if (DEBUG) {
-    printf("%p: %s page (%zu bytes)\n", page, get_page_type_str(page->type),
-           page_size);
-  }
-
-  return (page);
+  return (zone);
 }
 
-void split_block(Block *block, size_t size) {
+void alloc_block(Block *block, size_t size) {
   size_t remaining = block->size - size;
   if (remaining >= sizeof(Block) + 1) {
     // Create new block in the remaining space
@@ -119,24 +110,17 @@ void split_block(Block *block, size_t size) {
     block->size = size;
     block->free = false;
     block->next = new_block;
-
-    if (DEBUG) {
-      printf("%p -> %p\n", block, new_block);
-    }
   } else {
     // Not enough space to split, use entire block
     block->free = false;
-    if (DEBUG) {
-      printf("Used entire block: %p (%zu)\n", block, block->size);
-    }
   }
 }
 
-Block *get_free_block_in_page_type(PageType type, size_t size) {
-  Page *page = base;
-  while (page != NULL) {
-    if (page->type == type) {
-      Block *block = page->blocks;
+Block *get_free_block_in_zone_type(ZoneType type, size_t size) {
+  Zone *zone = base;
+  while (zone != NULL) {
+    if (zone->type == type) {
+      Block *block = zone->blocks;
       while (block != NULL) {
         if (block->free && block->size >= size) {
           return (block);
@@ -144,18 +128,18 @@ Block *get_free_block_in_page_type(PageType type, size_t size) {
         block = block->next;
       }
     }
-    page = page->next;
+    zone = zone->next;
   }
   return (NULL);
 }
 
-void show_alloc_page(Page *page) {
-  if (page == NULL) {
+void show_alloc_zone(Zone *zone) {
+  if (zone == NULL) {
     return;
   }
 
-  Block *block = page->blocks;
-  printf("%s : %p\n", get_page_type_str(page->type), page);
+  Block *block = zone->blocks;
+  printf("%s : %p\n", get_zone_type_str(zone->type), zone);
   while (block != NULL) {
     if (block->free == true) {
       break;
@@ -169,10 +153,10 @@ void show_alloc_page(Page *page) {
 }
 
 void show_alloc_mem() {
-  Page *page = base;
-  while (page != NULL) {
-    show_alloc_page(page);
-    page = page->next;
+  Zone *zone = base;
+  while (zone != NULL) {
+    show_alloc_zone(zone);
+    zone = zone->next;
   }
 }
 
@@ -181,36 +165,30 @@ void *ft_malloc(size_t size) {
     return (NULL);
   }
 
-  if (DEBUG) {
-    printf("%zu bytes requested\n", size);
-  }
-
-  // Align size
   size = size + sizeof(Block);
 
-  PageType type = get_page_type(size);
-
   // Try to find existing free block
-  Block *block = get_free_block_in_page_type(type, size);
+  ZoneType type = get_zone_type(size);
+  Block *block = get_free_block_in_zone_type(type, size);
   if (block != NULL) {
-    split_block(block, size);
+    alloc_block(block, size);
     return (void *)((char *)block + sizeof(Block));
   }
 
-  // Create new page
-  Page *page = get_page(type, size);
-  if (page == NULL) {
+  // Create new zone
+  Zone *zone = get_zone(type, size);
+  if (zone == NULL) {
     return (NULL);
   }
 
-  // Add to global page list
-  page->next = base;
-  base = page;
+  // Add to global zone list
+  zone->next = base;
+  base = zone;
 
-  // Use first block in new page
-  block = page->blocks;
+  // Use first block in new zone
+  block = zone->blocks;
   if (block->free == true && block->size >= size) {
-    split_block(block, size);
+    alloc_block(block, size);
     return (void *)((char *)block + sizeof(Block));
   }
 
@@ -242,22 +220,22 @@ void *ft_realloc(void *ptr, size_t size) {
     return (NULL);
   }
 
-  // Determine what page type the new size needs
-  PageType new_type = get_page_type(size);
+  // Determine what zone type the new size needs
+  ZoneType new_type = get_zone_type(size);
 
-  // Determine what page type the current block is in
-  PageType current_type = get_page_type(block->size);
+  // Determine what zone type the current block is in
+  ZoneType current_type = get_zone_type(block->size);
 
-  // If the new size fits in the current block and same page type, try to resize
+  // If the new size fits in the current block and same zone type, try to resize
   if (new_type == current_type && block->size >= size) {
     // Can potentially split the block if it's much larger
     if (block->size >= size + sizeof(Block)) {
-      split_block(block, size);
+      alloc_block(block, size);
     }
     return (ptr);
   }
 
-  // Need to allocate new memory (different page type or not enough space)
+  // Need to allocate new memory (different zone type or not enough space)
   void *new_ptr = ft_malloc(size);
   if (new_ptr == NULL) {
     return (NULL);

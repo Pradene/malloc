@@ -9,31 +9,29 @@
 #include <sys/resource.h>
 #include <unistd.h>
 
-#define DEBUG 0
-
 #define ALIGN(size, alignment) (((size) + (alignment - 1)) & ~(alignment - 1))
 
-#define TINY_MAX 128
-#define SMALL_MAX 4096
+#define TINY_BLOCK_MAX_SIZE 128
+#define SMALL_BLOCK_MAX_SIZE 4096
 
-#define TINY_SIZE (TINY_MAX + sizeof(Block)) * 128
-#define SMALL_SIZE (SMALL_MAX + sizeof(Block)) * 128
+#define TINY_ZONE_SIZE (TINY_BLOCK_MAX_SIZE * 128)
+#define SMALL_ZONE_SIZE (SMALL_BLOCK_MAX_SIZE * 128)
 
-typedef enum { TINY, SMALL, LARGE } PageType;
+typedef enum { TINY, SMALL, LARGE } ZoneType;
 
-typedef struct Page {
+typedef struct Zone {
   void *start; // pointer returned by mmap()
   size_t size; // total page size
-  PageType type;
+  ZoneType type;
   struct Block *blocks; // linked list of blocks inside this page
-  struct Page *next;
-} Page;
+  struct Zone *next;
+} Zone;
 
-Page *base = NULL;
+Zone *base = NULL;
 
 typedef struct Block {
-  size_t size;
   bool free;
+  size_t size;
   struct Block *next;
 } Block;
 
