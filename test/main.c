@@ -10,6 +10,7 @@ int main() {
   void *p4 = malloc(2000);
   void *p5 = malloc(80);
   void *p6 = malloc(104);
+  void *p7 = malloc(79);
 
   show_alloc_mem();
 
@@ -19,6 +20,7 @@ int main() {
   free(p4);
   free(p5);
   free(p6);
+  free(p7);
 
   Zone *zone = NULL;
   while (base) {

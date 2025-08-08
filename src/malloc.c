@@ -1,5 +1,29 @@
 #include "malloc.h"
 
+size_t get_alloc_zones_size() {
+  size_t size = 0;
+  Zone *zone = base;
+  while (zone != NULL) {
+    size += zone->size;
+    zone = zone->next;
+  }
+  return (size);
+}
+
+bool can_alloc(size_t size) {
+  size_t alloc_size = get_alloc_zones_size();
+  struct rlimit limits;
+  if (getrlimit(RLIMIT_AS, &limits) != 0) {
+    return (false);
+  } else if (limits.rlim_cur == RLIM_INFINITY) {
+    return (true);
+  } else if (alloc_size + size > limits.rlim_cur) {
+    return (false);
+  } else {
+    return (true);
+  }
+}
+
 size_t get_os_page_size() {
 #if defined(__APPLE__) || defined(__MACH__)
   return (getpagesize());
@@ -67,10 +91,13 @@ Zone *get_zone(ZoneType type, size_t size) {
     break;
   }
 
-  size += sizeof(Zone);
-
   // Round up to page size
+  size += sizeof(Zone);
   size_t zone_size = ALIGN(size, get_os_page_size());
+
+  if (can_alloc(size) == false) {
+    return (NULL);
+  }
 
   // Allocate the page using mmap
   int prot = PROT_READ | PROT_WRITE;
@@ -144,7 +171,8 @@ void show_alloc_zone(Zone *zone) {
   }
 
   Block *block = zone->blocks;
-  printf("%s : %p\n", get_zone_type_str(zone->type), zone);
+  printf("%s : %p\n", get_zone_type_str(zone->type),
+         (char *)zone + sizeof(Zone));
   while (block != NULL) {
     if (block->free == true) {
       break;
@@ -152,7 +180,8 @@ void show_alloc_zone(Zone *zone) {
     size_t size = block->size;
     void *start = block;
     void *end = start + size;
-    printf("%p -> %p : %zu bytes\n", start, end, size);
+    printf("%p -> %p : %zu bytes\n", start + sizeof(Block), end,
+           size - sizeof(Block));
     block = block->next;
   }
 }
@@ -234,9 +263,7 @@ void *realloc(void *ptr, size_t size) {
   // If the new size fits in the current block and same zone type, try to resize
   if (new_type == current_type && block->size >= size) {
     // Can potentially split the block if it's much larger
-    if (block->size >= size + sizeof(Block)) {
-      alloc_block(block, size);
-    }
+    alloc_block(block, size);
     return (ptr);
   }
 

@@ -11,7 +11,7 @@
 #define ALIGNMENT 16
 #define ALIGN(size, alignment) (((size) + (alignment - 1)) & ~(alignment - 1))
 
-#define TINY_BLOCK_MAX_SIZE 128
+#define TINY_BLOCK_MAX_SIZE 256
 #define SMALL_BLOCK_MAX_SIZE 4096
 
 #define TINY_ZONE_SIZE TINY_BLOCK_MAX_SIZE * 128
