@@ -15,7 +15,9 @@ Block *get_block_from_ptr(void *ptr) {
   while (zone != NULL) {
     Block *block = zone->blocks;
     while (block != NULL) {
-      if (block == (Block *)(ptr - sizeof(Block))) {
+      void *start = (char *)block + sizeof(Block);
+      void *end = (char *)block + block->size;
+      if (start <= ptr && ptr < end) {
         return (block);
       }
       block = block->next;
@@ -96,13 +98,14 @@ Zone *get_zone(ZoneType type, size_t size) {
 }
 
 void alloc_block(Block *block, size_t size) {
-  size_t remaining = block->size - size;
-  if (remaining >= sizeof(Block) + 1) {
+  size_t aligned_size = ALIGN(size, ALIGNMENT);
+  size_t remaining_size = block->size - aligned_size;
+  if (remaining_size > sizeof(Block)) {
     // Create new block in the remaining space
-    Block *new_block = (Block *)((char *)block + size);
+    Block *new_block = (Block *)((char *)block + aligned_size);
 
     // Initialize new block
-    new_block->size = remaining;
+    new_block->size = remaining_size;
     new_block->free = true;
     new_block->next = block->next;
 
@@ -112,7 +115,9 @@ void alloc_block(Block *block, size_t size) {
     block->next = new_block;
   } else {
     // Not enough space to split, use entire block
+    block->size = size;
     block->free = false;
+    block->next = NULL;
   }
 }
 

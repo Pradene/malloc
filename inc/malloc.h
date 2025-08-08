@@ -14,18 +14,18 @@
 #define TINY_BLOCK_MAX_SIZE 128
 #define SMALL_BLOCK_MAX_SIZE 4096
 
-#define TINY_ZONE_SIZE (TINY_BLOCK_MAX_SIZE * 128)
-#define SMALL_ZONE_SIZE (SMALL_BLOCK_MAX_SIZE * 128)
+#define TINY_ZONE_SIZE TINY_BLOCK_MAX_SIZE * 128
+#define SMALL_ZONE_SIZE SMALL_BLOCK_MAX_SIZE * 128
 
 typedef enum { TINY, SMALL, LARGE } ZoneType;
 
-typedef struct Block {
-  bool free;
+typedef struct __attribute__((aligned(ALIGNMENT))) Block {
+  bool free; // is block free
   size_t size;
   struct Block *next;
 } Block;
 
-typedef struct Zone {
+typedef struct __attribute__((aligned(ALIGNMENT))) Zone {
   void *start; // pointer returned by mmap()
   size_t size; // total page size
   ZoneType type;
