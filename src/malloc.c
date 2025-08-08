@@ -1,5 +1,9 @@
 #include "malloc.h"
 
+inline size_t align(size_t value, size_t alignment) {
+  return ((value) + (alignment - 1)) & ~(alignment - 1);
+}
+
 size_t get_alloc_zones_size() {
   size_t size = 0;
   Zone *zone = base;
@@ -93,7 +97,7 @@ Zone *get_zone(ZoneType type, size_t size) {
 
   // Round up to page size
   size += sizeof(Zone);
-  size_t zone_size = ALIGN(size, get_os_page_size());
+  size_t zone_size = align(size, get_os_page_size());
 
   if (can_alloc(size) == false) {
     return (NULL);
@@ -125,7 +129,7 @@ Zone *get_zone(ZoneType type, size_t size) {
 }
 
 void alloc_block(Block *block, size_t size) {
-  size_t aligned_size = ALIGN(size, ALIGNMENT);
+  size_t aligned_size = align(size, ALIGNMENT);
   size_t remaining_size = block->size - aligned_size;
   if (remaining_size > sizeof(Block)) {
     // Create new block in the remaining space
