@@ -22,11 +22,5 @@ int main() {
   free(p6);
   free(p7);
 
-  Zone *zone = NULL;
-  while (base) {
-    zone = base->next;
-    munmap(base, base->size);
-    base = zone;
-  }
   return (0);
 }

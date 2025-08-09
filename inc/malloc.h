@@ -21,6 +21,7 @@ typedef enum { TINY, SMALL, LARGE } ZoneType;
 typedef struct __attribute__((aligned(ALIGNMENT))) Block {
   bool free; // is block free
   size_t size;
+  struct Block *prev;
   struct Block *next;
 } Block;
 
@@ -29,10 +30,9 @@ typedef struct __attribute__((aligned(ALIGNMENT))) Zone {
   size_t size; // total page size
   ZoneType type;
   Block *blocks; // linked list of blocks inside this page
+  struct Zone *prev;
   struct Zone *next;
 } Zone;
-
-Zone *base = NULL;
 
 void *malloc(size_t size);
 void *realloc(void *ptr, size_t size);
