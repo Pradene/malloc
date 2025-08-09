@@ -216,53 +216,53 @@ static void alloc_block(Block *block, size_t size) {
 }
 
 // Coalesce adjacent free blocks for defragmentation
-static void coalesce_blocks(Block *block) {
-  if (block == NULL || !block->free) {
-    return;
-  }
-
-  // Coalesce with next block if it's free and adjacent
-  while (block->next != NULL && block->next->free) {
-    Block *next_block = block->next;
-
-    // Check if blocks are actually adjacent in memory
-    void *block_end = (char *)block + block->size;
-    if (block_end == (void *)next_block) {
-      // Merge blocks
-      block->size += next_block->size;
-      block->next = next_block->next;
-
-      // Update prev pointer of the block after next_block
-      if (next_block->next != NULL) {
-        next_block->next->prev = block;
-      }
-    } else {
-      break; // Blocks aren't adjacent
-    }
-  }
-
-  // Coalesce with previous block if it's free and adjacent
-  while (block->prev != NULL && block->prev->free) {
-    Block *prev_block = block->prev;
-
-    // Check if blocks are actually adjacent in memory
-    void *prev_end = (char *)prev_block + prev_block->size;
-    if (prev_end == (void *)block) {
-      // Merge blocks
-      prev_block->size += block->size;
-      prev_block->next = block->next;
-
-      // Update prev pointer of the block after current block
-      if (block->next != NULL) {
-        block->next->prev = prev_block;
-      }
-
-      block = prev_block; // Continue from the merged block
-    } else {
-      break; // Blocks aren't adjacent
-    }
-  }
-}
+// static void coalesce_blocks(Block *block) {
+//   if (block == NULL || !block->free) {
+//     return;
+//   }
+//
+//   // Coalesce with next block if it's free and adjacent
+//   while (block->next != NULL && block->next->free) {
+//     Block *next_block = block->next;
+//
+//     // Check if blocks are actually adjacent in memory
+//     void *block_end = (char *)block + block->size;
+//     if (block_end == (void *)next_block) {
+//       // Merge blocks
+//       block->size += next_block->size;
+//       block->next = next_block->next;
+//
+//       // Update prev pointer of the block after next_block
+//       if (next_block->next != NULL) {
+//         next_block->next->prev = block;
+//       }
+//     } else {
+//       break; // Blocks aren't adjacent
+//     }
+//   }
+//
+//   // Coalesce with previous block if it's free and adjacent
+//   while (block->prev != NULL && block->prev->free) {
+//     Block *prev_block = block->prev;
+//
+//     // Check if blocks are actually adjacent in memory
+//     void *prev_end = (char *)prev_block + prev_block->size;
+//     if (prev_end == (void *)block) {
+//       // Merge blocks
+//       prev_block->size += block->size;
+//       prev_block->next = block->next;
+//
+//       // Update prev pointer of the block after current block
+//       if (block->next != NULL) {
+//         block->next->prev = prev_block;
+//       }
+//
+//       block = prev_block; // Continue from the merged block
+//     } else {
+//       break; // Blocks aren't adjacent
+//     }
+//   }
+// }
 
 static Block *get_free_block_in_zone_type(ZoneType type, size_t size) {
   Zone *zone = base;
@@ -347,13 +347,13 @@ void ft_free(void *ptr) {
     return; // Invalid pointer
   }
 
+  // Mark block as free
+  block->free = true;
+
   Zone *zone = get_zone_from_block(block);
   if (zone == NULL) {
     return;
   }
-
-  // Mark block as free
-  block->free = true;
 
   // Check if entire zone is free
   if (is_zone_free(zone) == true) {
