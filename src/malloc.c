@@ -6,11 +6,27 @@ static inline size_t align(size_t value, size_t alignment) {
   return ((value) + (alignment - 1)) & ~(alignment - 1);
 }
 
+// static size_t get_alloc_blocks_size() {
+//   size_t size = 0;
+//   Zone *zone = base;
+//   while (zone != NULL) {
+//     Block *block = zone->blocks;
+//     while (block != NULL) {
+//       if (block->free == false) {
+//         size = size + block->size;
+//       }
+//       block = block->next;
+//     }
+//     zone = zone->next;
+//   }
+//   return (size);
+// }
+
 static size_t get_alloc_zones_size() {
   size_t size = 0;
   Zone *zone = base;
   while (zone != NULL) {
-    size += zone->size;
+    size = size + zone->size;
     zone = zone->next;
   }
   return (size);
@@ -146,7 +162,6 @@ static Zone *get_zone(ZoneType type, size_t size) {
 
   // Place Zone struct at the beginning
   Zone *zone = (Zone *)memory;
-  zone->start = memory + sizeof(Zone);
   zone->size = zone_size;
   zone->type = type;
   zone->prev = NULL;
@@ -156,7 +171,7 @@ static Zone *get_zone(ZoneType type, size_t size) {
   }
   base = zone;
 
-  Block *block = zone->start;
+  Block *block = (Block *)(memory + sizeof(Zone));
   block->size = zone_size - sizeof(Zone);
   block->free = true;
   block->prev = NULL;
@@ -168,6 +183,10 @@ static Zone *get_zone(ZoneType type, size_t size) {
 }
 
 static void alloc_block(Block *block, size_t size) {
+  if (block == NULL) {
+    return;
+  }
+
   size_t aligned_size = align(size, ALIGNMENT);
   size_t remaining_size = block->size - aligned_size;
 
@@ -267,18 +286,14 @@ static void show_alloc_zone(Zone *zone) {
     return;
   }
 
+  printf("%s : %p\n", get_zone_type_str(zone->type), zone);
   Block *block = zone->blocks;
-  printf("%s : %p\n", get_zone_type_str(zone->type),
-         (char *)zone + sizeof(Zone));
   while (block != NULL) {
-    if (block->free == true) {
-      break;
-    }
     size_t size = block->size;
     void *start = block;
     void *end = start + size;
-    printf("%p -> %p : %zu bytes\n", start + sizeof(Block), end,
-           size - sizeof(Block));
+    printf("%p -> %p : %zu bytes (%s)\n", start, end, size,
+           block->free ? "FREE" : "ALLOCATED");
     block = block->next;
   }
 }
@@ -291,7 +306,7 @@ void show_alloc_mem() {
   }
 }
 
-void *malloc(size_t size) {
+void *ft_malloc(size_t size) {
   if (size == 0) {
     return (NULL);
   }
@@ -322,28 +337,31 @@ void *malloc(size_t size) {
   return (NULL);
 }
 
-void free(void *ptr) {
-  Block *block = get_block_from_ptr(ptr);
-  if (block == NULL) {
+void ft_free(void *ptr) {
+  if (ptr == NULL) {
     return;
   }
 
-  block->free = true;
-
-  // Coalesce adjacent free blocks for defragmentation
-  coalesce_blocks(block);
+  Block *block = get_block_from_ptr(ptr);
+  if (block == NULL) {
+    return; // Invalid pointer
+  }
 
   Zone *zone = get_zone_from_block(block);
   if (zone == NULL) {
     return;
   }
 
+  // Mark block as free
+  block->free = true;
+
+  // Check if entire zone is free
   if (is_zone_free(zone) == true) {
-    // Remove zone from the linked list using prev pointer
+    // Remove zone from the doubly linked list
     if (zone->prev != NULL) {
       zone->prev->next = zone->next;
     } else {
-      // This zone is the base
+      // This zone is the base (first zone) - update base
       base = zone->next;
     }
 
@@ -351,20 +369,20 @@ void free(void *ptr) {
       zone->next->prev = zone->prev;
     }
 
-    // Now it's safe to unmap the zone
+    // Unmap the zone
     munmap(zone, zone->size);
   }
 }
 
-void *realloc(void *ptr, size_t size) {
+void *ft_realloc(void *ptr, size_t size) {
   // If ptr is NULL, behave like malloc
   if (ptr == NULL) {
-    return (malloc(size));
+    return (ft_malloc(size));
   }
 
   // If size is 0, behave like free
   if (size == 0) {
-    free(ptr);
+    ft_free(ptr);
     return (NULL);
   }
 
@@ -389,7 +407,7 @@ void *realloc(void *ptr, size_t size) {
   }
 
   // Need to allocate new memory (different zone type or not enough space)
-  void *new_ptr = malloc(size);
+  void *new_ptr = ft_malloc(size);
   if (new_ptr == NULL) {
     return (NULL);
   }
@@ -400,7 +418,7 @@ void *realloc(void *ptr, size_t size) {
   memcpy(new_ptr, ptr, copy_size);
 
   // Free the old block
-  free(ptr);
+  ft_free(ptr);
 
   return (new_ptr);
 }

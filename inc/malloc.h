@@ -26,7 +26,6 @@ typedef struct __attribute__((aligned(ALIGNMENT))) Block {
 } Block;
 
 typedef struct __attribute__((aligned(ALIGNMENT))) Zone {
-  void *start; // pointer returned by mmap()
   size_t size; // total page size
   ZoneType type;
   Block *blocks; // linked list of blocks inside this page
@@ -34,9 +33,9 @@ typedef struct __attribute__((aligned(ALIGNMENT))) Zone {
   struct Zone *next;
 } Zone;
 
-void *malloc(size_t size);
-void *realloc(void *ptr, size_t size);
-void free(void *ptr);
+void *ft_malloc(size_t size);
+void *ft_realloc(void *ptr, size_t size);
+void ft_free(void *ptr);
 void show_alloc_mem();
 
 #endif

@@ -1,26 +1,24 @@
 #include "malloc.h"
 
 int main() {
-  struct rlimit limit = {0};
-  getrlimit(RLIMIT_AS, &limit);
-
-  void *p1 = malloc(2048);
-  void *p2 = malloc(2048);
-  void *p3 = malloc(2048);
-  void *p4 = malloc(2000);
-  void *p5 = malloc(80);
-  void *p6 = malloc(104);
-  void *p7 = malloc(79);
+  void *p1 = ft_malloc(2048);
+  void *p2 = ft_malloc(2048);
+  void *p3 = ft_malloc(2048);
+  void *p4 = ft_malloc(2000);
+  void *p5 = ft_malloc(80);
+  void *p6 = ft_malloc(104);
+  void *p7 = ft_malloc(79);
 
   show_alloc_mem();
 
-  free(p1);
-  free(p2);
-  free(p3);
-  free(p4);
-  free(p5);
-  free(p6);
-  free(p7);
+  ft_free(p1);
+  ft_free(p2);
+  ft_free(p3);
+  ft_free(p4);
+  ft_free(p5);
+  ft_free(p6);
+  ft_free(p7);
+  show_alloc_mem();
 
   return (0);
 }
