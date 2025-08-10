@@ -6,21 +6,21 @@ static inline size_t align(size_t value, size_t alignment) {
   return ((value) + (alignment - 1)) & ~(alignment - 1);
 }
 
-// static size_t get_alloc_blocks_size() {
-//   size_t size = 0;
-//   Zone *zone = base;
-//   while (zone != NULL) {
-//     Block *block = zone->blocks;
-//     while (block != NULL) {
-//       if (block->free == false) {
-//         size = size + block->size;
-//       }
-//       block = block->next;
-//     }
-//     zone = zone->next;
-//   }
-//   return (size);
-// }
+static size_t get_alloc_blocks_size() {
+  size_t size = 0;
+  Zone *zone = base;
+  while (zone != NULL) {
+    Block *block = zone->blocks;
+    while (block != NULL) {
+      if (block->free == false) {
+        size = size + block->size;
+      }
+      block = block->next;
+    }
+    zone = zone->next;
+  }
+  return (size);
+}
 
 static size_t get_alloc_zones_size() {
   size_t size = 0;
@@ -289,11 +289,14 @@ static void show_alloc_zone(Zone *zone) {
   printf("%s : %p\n", get_zone_type_str(zone->type), zone);
   Block *block = zone->blocks;
   while (block != NULL) {
+    if (block->free == true) {
+      goto continiung;
+    }
     size_t size = block->size;
     void *start = block;
     void *end = start + size;
-    printf("%p -> %p : %zu bytes (%s)\n", start, end, size,
-           block->free ? "FREE" : "ALLOCATED");
+    printf("%p -> %p : %zu bytes\n", start, end, size);
+  continiung:
     block = block->next;
   }
 }
@@ -304,6 +307,7 @@ void show_alloc_mem() {
     show_alloc_zone(zone);
     zone = zone->next;
   }
+  printf("Total : %zu bytes\n", get_alloc_blocks_size());
 }
 
 void *ft_malloc(size_t size) {
