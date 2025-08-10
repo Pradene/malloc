@@ -1,7 +1,9 @@
 #include "malloc.h"
+#include <string.h>
 
 int main() {
   void *p1 = ft_malloc(2048);
+  strcpy(p1, "Hello world");
   void *p2 = ft_malloc(2048);
   void *p3 = ft_malloc(2048);
   void *p4 = ft_malloc(2000);

@@ -6,9 +6,8 @@ Zone *base = NULL;
 // Global mutex to protect all malloc operations
 static pthread_mutex_t malloc_mutex = PTHREAD_MUTEX_INITIALIZER;
 
-// Thread-safe wrapper macros
-#define LOCK_MALLOC() pthread_mutex_lock(&malloc_mutex)
-#define UNLOCK_MALLOC() pthread_mutex_unlock(&malloc_mutex)
+static inline void lock_malloc() { pthread_mutex_lock(&malloc_mutex); }
+static inline void unlock_malloc() { pthread_mutex_unlock(&malloc_mutex); }
 
 static inline size_t align(size_t value, size_t alignment) {
   return ((value) + (alignment - 1)) & ~(alignment - 1);
@@ -149,8 +148,7 @@ static Zone *get_zone(ZoneType type, size_t size) {
   }
 
   // Round up to page size
-  size += sizeof(Zone);
-  size_t zone_size = align(size, get_os_page_size());
+  size_t zone_size = align(size + sizeof(Zone), get_os_page_size());
 
   if (can_alloc(zone_size) == false) {
     return (NULL);
@@ -281,6 +279,35 @@ static Block *get_free_block_in_zone_type(ZoneType type, size_t size) {
   return (NULL);
 }
 
+static void print_hex_dump(void *ptr, size_t size) {
+  unsigned char *data = (unsigned char *)ptr;
+  size_t bpl = 16;
+
+  for (size_t i = 0; i < size; i += bpl) {
+    // Print address
+    printf("%p: ", (void *)((char *)ptr + i));
+
+    // Print hex bytes
+    for (size_t j = 0; j < bpl && (i + j) < size; j++) {
+      printf("%02x ", data[i + j]);
+    }
+
+    // Pad with spaces if last line is incomplete
+    for (size_t j = size - i; j < bpl && i + bpl >= size; j++) {
+      printf("   ");
+    }
+
+    // Print ASCII representation
+    printf("|");
+    for (size_t j = 0; j < bpl && (i + j) < size; j++) {
+      unsigned char c = data[i + j];
+      printf("%c", (c >= 32 && c <= 126) ? c : '.');
+    }
+    printf("|");
+    printf("\n");
+  }
+}
+
 static void show_alloc_zone(Zone *zone) {
   if (zone == NULL) {
     return;
@@ -297,20 +324,21 @@ static void show_alloc_zone(Zone *zone) {
     void *start = (char *)block + sizeof(Block);
     void *end = start + size;
     printf("%p -> %p : %zu bytes\n", start, end, size);
+    print_hex_dump(start, size);
   continuing:
     block = block->next;
   }
 }
 
 void show_alloc_mem() {
-  LOCK_MALLOC();
+  lock_malloc();
   Zone *zone = base;
   while (zone != NULL) {
     show_alloc_zone(zone);
     zone = zone->next;
   }
   printf("Total : %zu bytes\n", get_alloc_blocks_size());
-  UNLOCK_MALLOC();
+  unlock_malloc();
 }
 
 void *ft_malloc(size_t size) {
@@ -318,7 +346,7 @@ void *ft_malloc(size_t size) {
     return (NULL);
   }
 
-  LOCK_MALLOC();
+  lock_malloc();
 
   size_t total_size = size + sizeof(Block);
 
@@ -328,14 +356,14 @@ void *ft_malloc(size_t size) {
   if (block != NULL) {
     fragment_block(block, total_size);
     void *result = (void *)((char *)block + sizeof(Block));
-    UNLOCK_MALLOC();
+    unlock_malloc();
     return result;
   }
 
   // Create new zone
   Zone *zone = get_zone(type, total_size);
   if (zone == NULL) {
-    UNLOCK_MALLOC();
+    unlock_malloc();
     return (NULL);
   }
 
@@ -344,11 +372,11 @@ void *ft_malloc(size_t size) {
   if (block->free == true && block->size >= total_size) {
     fragment_block(block, total_size);
     void *result = (void *)((char *)block + sizeof(Block));
-    UNLOCK_MALLOC();
+    unlock_malloc();
     return result;
   }
 
-  UNLOCK_MALLOC();
+  unlock_malloc();
   return (NULL);
 }
 
@@ -357,17 +385,17 @@ void ft_free(void *ptr) {
     return;
   }
 
-  LOCK_MALLOC();
+  lock_malloc();
 
   Block *block = get_block_from_ptr(ptr);
   if (block == NULL) {
-    UNLOCK_MALLOC();
+    unlock_malloc();
     return; // Invalid pointer
   }
 
   Zone *zone = get_zone_from_block(block);
   if (zone == NULL) {
-    UNLOCK_MALLOC();
+    unlock_malloc();
     return;
   }
 
@@ -393,7 +421,7 @@ void ft_free(void *ptr) {
     munmap(zone, zone->size);
   }
 
-  UNLOCK_MALLOC();
+  unlock_malloc();
 }
 
 void *ft_realloc(void *ptr, size_t size) {
@@ -408,16 +436,15 @@ void *ft_realloc(void *ptr, size_t size) {
     return (NULL);
   }
 
-  LOCK_MALLOC();
+  lock_malloc();
 
   Block *block = get_block_from_ptr(ptr);
   if (block == NULL) {
-    UNLOCK_MALLOC();
+    unlock_malloc();
     return (NULL);
   }
 
-  size_t new_total_size = size + sizeof(Block);
-  new_total_size = align(new_total_size, ALIGNMENT);
+  size_t new_total_size = align(size + sizeof(Block), ALIGNMENT);
   size_t current_user_size = block->size - sizeof(Block);
 
   // Determine zone types
@@ -430,11 +457,11 @@ void *ft_realloc(void *ptr, size_t size) {
     if (block->size - new_total_size >= sizeof(Block) + ALIGNMENT) {
       fragment_block(block, new_total_size);
     }
-    UNLOCK_MALLOC();
+    unlock_malloc();
     return (ptr);
   }
 
-  UNLOCK_MALLOC();
+  unlock_malloc();
 
   // Need new allocation - unlock first to avoid deadlock
   void *new_ptr = ft_malloc(size);
