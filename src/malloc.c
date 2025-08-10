@@ -1,6 +1,14 @@
 #include "malloc.h"
 
+// Global pointer to store linked list of zones
 Zone *base = NULL;
+
+// Global mutex to protect all malloc operations
+static pthread_mutex_t malloc_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+// Thread-safe wrapper macros
+#define LOCK_MALLOC() pthread_mutex_lock(&malloc_mutex)
+#define UNLOCK_MALLOC() pthread_mutex_unlock(&malloc_mutex)
 
 static inline size_t align(size_t value, size_t alignment) {
   return ((value) + (alignment - 1)) & ~(alignment - 1);
@@ -13,7 +21,7 @@ static size_t get_alloc_blocks_size() {
     Block *block = zone->blocks;
     while (block != NULL) {
       if (block->free == false) {
-        size = size + block->size;
+        size = size + (block->size - sizeof(Block));
       }
       block = block->next;
     }
@@ -87,10 +95,6 @@ static Block *get_block_from_ptr(void *ptr) {
   return (NULL);
 }
 
-// static bool is_valid_ptr(void *ptr) {
-//   return (get_block_from_ptr(ptr) != NULL);
-// }
-
 static Zone *get_zone_from_block(Block *block) {
   Zone *z = base;
   while (z != NULL) {
@@ -148,7 +152,7 @@ static Zone *get_zone(ZoneType type, size_t size) {
   size += sizeof(Zone);
   size_t zone_size = align(size, get_os_page_size());
 
-  if (can_alloc(size) == false) {
+  if (can_alloc(zone_size) == false) {
     return (NULL);
   }
 
@@ -171,7 +175,7 @@ static Zone *get_zone(ZoneType type, size_t size) {
   }
   base = zone;
 
-  Block *block = (Block *)(memory + sizeof(Zone));
+  Block *block = (Block *)((char *)memory + sizeof(Zone));
   block->size = zone_size - sizeof(Zone);
   block->free = true;
   block->prev = NULL;
@@ -190,7 +194,8 @@ static void fragment_block(Block *block, size_t size) {
   size_t aligned_size = align(size, ALIGNMENT);
   size_t remaining_size = block->size - aligned_size;
 
-  if (remaining_size > sizeof(Block)) {
+  // Need enough space for new Block header + minimum alignment
+  if (remaining_size >= sizeof(Block) + ALIGNMENT) {
     // Create new block in the remaining space
     Block *new_block = (Block *)((char *)block + aligned_size);
 
@@ -206,7 +211,7 @@ static void fragment_block(Block *block, size_t size) {
     }
 
     // Update current block
-    block->size = aligned_size;
+    block->size = size;
     block->free = false;
     block->next = new_block;
   } else {
@@ -224,23 +229,24 @@ static void coalesce_block(Block *block) {
   // Coalesce with next block if it's free and adjacent
   while (block->next != NULL && block->next->free) {
     Block *next_block = block->next;
-    // Check if blocks are actually adjacent in memory
+    // Check if blocks are adjacent in memory
     void *block_end = (char *)block + block->size;
     if ((char *)next_block - (char *)block_end < ALIGNMENT) {
       // Merge blocks
-      // Calculate new size as distance from block start to next_block end
       void *next_block_end = (char *)next_block + next_block->size;
       block->size = (char *)next_block_end - (char *)block;
+
       block->next = next_block->next;
-      // Update prev pointer of the block after next_block
       if (next_block->next != NULL) {
-        next_block->next->prev = block; // Continue from the merged block
+        next_block->next->prev = block; // Continue coalescing block
       }
     } else {
       // Blocks are not adjacent, stop coalescing
       break;
     }
   }
+
+  // Coalesce with previous block if it's free and adjacent
   while (block->prev != NULL && block->prev->free) {
     Block *prev_block = block->prev;
     void *prev_end = (char *)prev_block + prev_block->size;
@@ -251,7 +257,7 @@ static void coalesce_block(Block *block) {
       if (block->next != NULL) {
         block->next->prev = prev_block;
       }
-      block = prev_block;
+      block = prev_block; // Continue coalescing block
     } else {
       break;
     }
@@ -280,28 +286,31 @@ static void show_alloc_zone(Zone *zone) {
     return;
   }
 
-  printf("%s : %p\n", get_zone_type_str(zone->type), zone);
+  printf("%s : %p\n", get_zone_type_str(zone->type),
+         (char *)zone + sizeof(Zone));
   Block *block = zone->blocks;
   while (block != NULL) {
     if (block->free == true) {
-      goto continiung;
+      goto continuing;
     }
-    size_t size = block->size;
-    void *start = block;
+    size_t size = block->size - sizeof(Block);
+    void *start = (char *)block + sizeof(Block);
     void *end = start + size;
     printf("%p -> %p : %zu bytes\n", start, end, size);
-  continiung:
+  continuing:
     block = block->next;
   }
 }
 
 void show_alloc_mem() {
+  LOCK_MALLOC();
   Zone *zone = base;
   while (zone != NULL) {
     show_alloc_zone(zone);
     zone = zone->next;
   }
   printf("Total : %zu bytes\n", get_alloc_blocks_size());
+  UNLOCK_MALLOC();
 }
 
 void *ft_malloc(size_t size) {
@@ -309,29 +318,37 @@ void *ft_malloc(size_t size) {
     return (NULL);
   }
 
-  size = size + sizeof(Block);
+  LOCK_MALLOC();
+
+  size_t total_size = size + sizeof(Block);
 
   // Try to find existing free block
-  ZoneType type = get_zone_type(size);
-  Block *block = get_free_block_in_zone_type(type, size);
+  ZoneType type = get_zone_type(total_size);
+  Block *block = get_free_block_in_zone_type(type, total_size);
   if (block != NULL) {
-    fragment_block(block, size);
-    return (void *)((char *)block + sizeof(Block));
+    fragment_block(block, total_size);
+    void *result = (void *)((char *)block + sizeof(Block));
+    UNLOCK_MALLOC();
+    return result;
   }
 
   // Create new zone
-  Zone *zone = get_zone(type, size);
+  Zone *zone = get_zone(type, total_size);
   if (zone == NULL) {
+    UNLOCK_MALLOC();
     return (NULL);
   }
 
   // Use first block in new zone
   block = zone->blocks;
-  if (block->free == true && block->size >= size) {
-    fragment_block(block, size);
-    return (void *)((char *)block + sizeof(Block));
+  if (block->free == true && block->size >= total_size) {
+    fragment_block(block, total_size);
+    void *result = (void *)((char *)block + sizeof(Block));
+    UNLOCK_MALLOC();
+    return result;
   }
 
+  UNLOCK_MALLOC();
   return (NULL);
 }
 
@@ -340,13 +357,17 @@ void ft_free(void *ptr) {
     return;
   }
 
+  LOCK_MALLOC();
+
   Block *block = get_block_from_ptr(ptr);
   if (block == NULL) {
+    UNLOCK_MALLOC();
     return; // Invalid pointer
   }
 
   Zone *zone = get_zone_from_block(block);
   if (zone == NULL) {
+    UNLOCK_MALLOC();
     return;
   }
 
@@ -371,6 +392,8 @@ void ft_free(void *ptr) {
     // Unmap the zone
     munmap(zone, zone->size);
   }
+
+  UNLOCK_MALLOC();
 }
 
 void *ft_realloc(void *ptr, size_t size) {
@@ -385,39 +408,44 @@ void *ft_realloc(void *ptr, size_t size) {
     return (NULL);
   }
 
-  Block *block;
-  if ((block = get_block_from_ptr(ptr)) == NULL) {
+  LOCK_MALLOC();
+
+  Block *block = get_block_from_ptr(ptr);
+  if (block == NULL) {
+    UNLOCK_MALLOC();
     return (NULL);
   }
 
-  size_t new_size = size + sizeof(Block);
+  size_t new_total_size = size + sizeof(Block);
+  new_total_size = align(new_total_size, ALIGNMENT);
+  size_t current_user_size = block->size - sizeof(Block);
 
-  // Determine what zone type the new size needs
-  ZoneType new_type = get_zone_type(new_size);
-
-  // Determine what zone type the current block is in
+  // Determine zone types
+  ZoneType new_type = get_zone_type(new_total_size);
   ZoneType current_type = get_zone_type(block->size);
 
-  // If the new size fits in the current block and same zone type, try to resize
-  if (new_type == current_type && block->size >= new_size) {
-    // Can potentially split the block if it's much larger
-    fragment_block(block, new_size);
+  // If same zone type and current block is large enough
+  if (new_type == current_type && block->size >= new_total_size) {
+    // Try to fragment if significantly larger
+    if (block->size - new_total_size >= sizeof(Block) + ALIGNMENT) {
+      fragment_block(block, new_total_size);
+    }
+    UNLOCK_MALLOC();
     return (ptr);
   }
 
-  // Need to allocate new memory (different zone type or not enough space)
+  UNLOCK_MALLOC();
+
+  // Need new allocation - unlock first to avoid deadlock
   void *new_ptr = ft_malloc(size);
   if (new_ptr == NULL) {
     return (NULL);
   }
 
-  // Copy the data (copy the minimum of old size and new size)
-  size_t copy_size =
-      (block->size - sizeof(Block) < size) ? block->size - sizeof(Block) : size;
+  // Copy minimum of old and new user data sizes
+  size_t copy_size = (current_user_size < size) ? current_user_size : size;
   memcpy(new_ptr, ptr, copy_size);
 
-  // Free the old block
   ft_free(ptr);
-
   return (new_ptr);
 }

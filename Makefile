@@ -25,7 +25,7 @@ $(NAME): $(OBJS)
 
 $(OBJS_DIR)/%.o: $(SRCS_DIR)/%.c
 	@mkdir -p $(OBJS_DIR)
-	$(CC) $(CFLAGS) -c -fPIC $< -o $@
+	$(CC) $(CFLAGS) -c -pthread -fPIC $< -o $@
 
 # Test rule: compile each test file with the library
 test: $(NAME) $(TEST_BINS)

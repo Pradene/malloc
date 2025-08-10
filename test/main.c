@@ -18,6 +18,7 @@ int main() {
   ft_free(p5);
   ft_free(p6);
   ft_free(p7);
+
   show_alloc_mem();
 
   return (0);
