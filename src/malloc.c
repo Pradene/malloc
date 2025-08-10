@@ -87,6 +87,10 @@ static Block *get_block_from_ptr(void *ptr) {
   return (NULL);
 }
 
+// static bool is_valid_ptr(void *ptr) {
+//   return (get_block_from_ptr(ptr) != NULL);
+// }
+
 static Zone *get_zone_from_block(Block *block) {
   Zone *z = base;
   while (z != NULL) {
@@ -101,10 +105,6 @@ static Zone *get_zone_from_block(Block *block) {
   }
   return (NULL);
 }
-
-// static bool is_valid_ptr(void *ptr) {
-//   return (get_block_from_ptr(ptr) != NULL);
-// }
 
 static ZoneType get_zone_type(size_t size) {
   if (size <= TINY_BLOCK_MAX_SIZE) {
@@ -182,7 +182,7 @@ static Zone *get_zone(ZoneType type, size_t size) {
   return (zone);
 }
 
-static void alloc_block(Block *block, size_t size) {
+static void fragment_block(Block *block, size_t size) {
   if (block == NULL) {
     return;
   }
@@ -216,53 +216,47 @@ static void alloc_block(Block *block, size_t size) {
 }
 
 // Coalesce adjacent free blocks for defragmentation
-// static void coalesce_blocks(Block *block) {
-//   if (block == NULL || !block->free) {
-//     return;
-//   }
-//
-//   // Coalesce with next block if it's free and adjacent
-//   while (block->next != NULL && block->next->free) {
-//     Block *next_block = block->next;
-//
-//     // Check if blocks are actually adjacent in memory
-//     void *block_end = (char *)block + block->size;
-//     if (block_end == (void *)next_block) {
-//       // Merge blocks
-//       block->size += next_block->size;
-//       block->next = next_block->next;
-//
-//       // Update prev pointer of the block after next_block
-//       if (next_block->next != NULL) {
-//         next_block->next->prev = block;
-//       }
-//     } else {
-//       break; // Blocks aren't adjacent
-//     }
-//   }
-//
-//   // Coalesce with previous block if it's free and adjacent
-//   while (block->prev != NULL && block->prev->free) {
-//     Block *prev_block = block->prev;
-//
-//     // Check if blocks are actually adjacent in memory
-//     void *prev_end = (char *)prev_block + prev_block->size;
-//     if (prev_end == (void *)block) {
-//       // Merge blocks
-//       prev_block->size += block->size;
-//       prev_block->next = block->next;
-//
-//       // Update prev pointer of the block after current block
-//       if (block->next != NULL) {
-//         block->next->prev = prev_block;
-//       }
-//
-//       block = prev_block; // Continue from the merged block
-//     } else {
-//       break; // Blocks aren't adjacent
-//     }
-//   }
-// }
+static void coalesce_block(Block *block) {
+  if (block == NULL || !block->free) {
+    return;
+  }
+
+  // Coalesce with next block if it's free and adjacent
+  while (block->next != NULL && block->next->free) {
+    Block *next_block = block->next;
+    // Check if blocks are actually adjacent in memory
+    void *block_end = (char *)block + block->size;
+    if ((char *)next_block - (char *)block_end < ALIGNMENT) {
+      // Merge blocks
+      // Calculate new size as distance from block start to next_block end
+      void *next_block_end = (char *)next_block + next_block->size;
+      block->size = (char *)next_block_end - (char *)block;
+      block->next = next_block->next;
+      // Update prev pointer of the block after next_block
+      if (next_block->next != NULL) {
+        next_block->next->prev = block; // Continue from the merged block
+      }
+    } else {
+      // Blocks are not adjacent, stop coalescing
+      break;
+    }
+  }
+  while (block->prev != NULL && block->prev->free) {
+    Block *prev_block = block->prev;
+    void *prev_end = (char *)prev_block + prev_block->size;
+    if ((char *)block - (char *)prev_end < ALIGNMENT) {
+      void *block_end = (char *)block + block->size;
+      prev_block->size = (char *)block_end - (char *)prev_block;
+      prev_block->next = block->next;
+      if (block->next != NULL) {
+        block->next->prev = prev_block;
+      }
+      block = prev_block;
+    } else {
+      break;
+    }
+  }
+}
 
 static Block *get_free_block_in_zone_type(ZoneType type, size_t size) {
   Zone *zone = base;
@@ -321,7 +315,7 @@ void *ft_malloc(size_t size) {
   ZoneType type = get_zone_type(size);
   Block *block = get_free_block_in_zone_type(type, size);
   if (block != NULL) {
-    alloc_block(block, size);
+    fragment_block(block, size);
     return (void *)((char *)block + sizeof(Block));
   }
 
@@ -334,7 +328,7 @@ void *ft_malloc(size_t size) {
   // Use first block in new zone
   block = zone->blocks;
   if (block->free == true && block->size >= size) {
-    alloc_block(block, size);
+    fragment_block(block, size);
     return (void *)((char *)block + sizeof(Block));
   }
 
@@ -351,13 +345,14 @@ void ft_free(void *ptr) {
     return; // Invalid pointer
   }
 
-  // Mark block as free
-  block->free = true;
-
   Zone *zone = get_zone_from_block(block);
   if (zone == NULL) {
     return;
   }
+
+  // Mark block as free
+  block->free = true;
+  coalesce_block(block);
 
   // Check if entire zone is free
   if (is_zone_free(zone) == true) {
@@ -406,7 +401,7 @@ void *ft_realloc(void *ptr, size_t size) {
   // If the new size fits in the current block and same zone type, try to resize
   if (new_type == current_type && block->size >= new_size) {
     // Can potentially split the block if it's much larger
-    alloc_block(block, new_size);
+    fragment_block(block, new_size);
     return (ptr);
   }
 
