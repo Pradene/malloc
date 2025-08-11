@@ -10,9 +10,15 @@
 #include <sys/resource.h>
 #include <unistd.h>
 
+#ifndef MALLOC_CHECK
 #define MALLOC_CHECK 0
+#endif
+#ifndef MALLOC_PERTURB
 #define MALLOC_PERTURB 0
+#endif
+#ifndef MALLOC_HEXDUMP
 #define MALLOC_HEXDUMP 0
+#endif
 
 #define ALIGNMENT 16
 
