@@ -179,12 +179,28 @@ static Zone *get_zone(ZoneType type, size_t size) {
   Zone *zone = (Zone *)memory;
   zone->size = zone_size;
   zone->type = type;
-  zone->prev = NULL;
-  zone->next = base;
-  if (base != NULL) {
-    base->prev = zone;
+  if (base == NULL || zone < base) {
+    // Insert at beginning (empty list or lowest address)
+    zone->prev = NULL;
+    zone->next = base;
+    if (base != NULL) {
+      base->prev = zone;
+    }
+    base = zone;
+  } else {
+    // Find correct position in sorted list
+    Zone *current = base;
+    while (current->next != NULL && current->next < zone) {
+      current = current->next;
+    }
+    // Insert zone after current
+    zone->next = current->next;
+    zone->prev = current;
+    if (current->next != NULL) {
+      current->next->prev = zone;
+    }
+    current->next = zone;
   }
-  base = zone;
 
   Block *block = (Block *)((char *)memory + sizeof(Zone));
   block->size = zone_size - sizeof(Zone);
