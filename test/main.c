@@ -1,6 +1,8 @@
 #include "malloc.h"
 
 int main() {
+  show_alloc_mem();
+
   void *p1 = ft_malloc(2048);
   void *p2 = ft_malloc(2048);
   void *p3 = ft_malloc(2048);
@@ -18,7 +20,6 @@ int main() {
   ft_free(p5);
   ft_free(p6);
   ft_free(p7);
-  ft_free(p1);
 
   return (0);
 }

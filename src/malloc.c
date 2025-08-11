@@ -294,18 +294,18 @@ static Block *get_free_block_in_zone_type(ZoneType type, size_t size) {
 
 static void print_hex_dump(void *ptr, size_t size) {
   unsigned char *data = (unsigned char *)ptr;
-  size_t bpl = 16;
+  size_t bytes_per_line = 16;
 
-  for (size_t i = 0; i < size; i += bpl) {
+  for (size_t i = 0; i < size; i += bytes_per_line) {
     printf("%p: ", (void *)((char *)ptr + i));
-    for (size_t j = 0; j < bpl && (i + j) < size; j++) {
+    for (size_t j = 0; j < bytes_per_line && (i + j) < size; j++) {
       printf("%02x ", data[i + j]);
     }
-    for (size_t j = size - i; j < bpl && i + bpl >= size; j++) {
+    for (size_t j = size - i; j < bytes_per_line && i + bytes_per_line >= size; j++) {
       printf("   ");
     }
     printf("|");
-    for (size_t j = 0; j < bpl && (i + j) < size; j++) {
+    for (size_t j = 0; j < bytes_per_line && (i + j) < size; j++) {
       unsigned char c = data[i + j];
       printf("%c", (c >= 32 && c <= 126) ? c : '.');
     }
@@ -482,6 +482,12 @@ void *ft_realloc(void *ptr, size_t size) {
 
   ft_free(ptr);
   return (new_ptr);
+}
+
+__attribute__((constructor))
+static void init() {
+  get_zone(TINY, 0);
+  get_zone(SMALL, 0);
 }
 
 __attribute__((destructor))
