@@ -23,9 +23,10 @@
 #define SMALL_ZONE_SIZE SMALL_BLOCK_MAX_SIZE * 128
 
 typedef enum { TINY, SMALL, LARGE } ZoneType;
+typedef enum { FREE, ALLOCATED, FREED } BlockStatus;
 
 typedef struct __attribute__((aligned(ALIGNMENT))) Block {
-  bool free; // is block free
+  BlockStatus status;
   size_t size;
   struct Block *prev;
   struct Block *next;

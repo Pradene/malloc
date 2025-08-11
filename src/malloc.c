@@ -31,7 +31,7 @@ static size_t get_alloc_blocks_size() {
   while (zone != NULL) {
     Block *block = zone->blocks;
     while (block != NULL) {
-      if (block->free == false) {
+      if (block->status == ALLOCATED) {
         size = size + get_block_size(block);
       }
       block = block->next;
@@ -71,7 +71,7 @@ static bool is_zone_free(Zone *zone) {
   }
   Block *b = zone->blocks;
   while (b != NULL) {
-    if (b->free == false) {
+    if (b->status == ALLOCATED) {
       return (false);
     }
     b = b->next;
@@ -95,8 +95,7 @@ static Block *get_block_from_ptr(void *ptr) {
     Block *b = z->blocks;
     while (b != NULL) {
       void *start = get_block_start(b);
-      void *end = start + get_block_size(b);
-      if (start <= ptr && ptr < end) {
+      if (start == ptr) {
         return (b);
       }
       b = b->next;
@@ -189,7 +188,7 @@ static Zone *get_zone(ZoneType type, size_t size) {
 
   Block *block = (Block *)((char *)memory + sizeof(Zone));
   block->size = zone_size - sizeof(Zone);
-  block->free = true;
+  block->status = FREE;
   block->prev = NULL;
   block->next = NULL;
 
@@ -213,7 +212,7 @@ static void fragment_block(Block *block, size_t size) {
 
     // Initialize new block
     new_block->size = remaining_size;
-    new_block->free = true;
+    new_block->status = FREE;
     new_block->next = block->next;
     new_block->prev = block;
 
@@ -227,7 +226,7 @@ static void fragment_block(Block *block, size_t size) {
     block->next = new_block;
   }
 
-  block->free = false;
+  block->status = ALLOCATED;
   if (MALLOC_PERTURB != 0) {
     memset(get_block_start(block), ~(0xFF & MALLOC_PERTURB), get_block_size(block));
   }
@@ -235,12 +234,12 @@ static void fragment_block(Block *block, size_t size) {
 
 // Coalesce adjacent free blocks for defragmentation
 static void coalesce_block(Block *block) {
-  if (block == NULL || !block->free) {
+  if (block == NULL || block->status == ALLOCATED) {
     return;
   }
 
   // Coalesce with next block if it's free and adjacent
-  while (block->next != NULL && block->next->free) {
+  while (block->next != NULL && block->next->status != ALLOCATED) {
     Block *next_block = block->next;
     void *block_end = (char *)block + block->size;
     // Check if blocks are adjacent in memory
@@ -259,7 +258,7 @@ static void coalesce_block(Block *block) {
   }
 
   // Coalesce with previous block if it's free and adjacent
-  while (block->prev != NULL && block->prev->free) {
+  while (block->prev != NULL && block->prev->status != ALLOCATED) {
     Block *prev_block = block->prev;
     void *prev_end = (char *)prev_block + prev_block->size;
     if ((char *)block - (char *)prev_end < ALIGNMENT) {
@@ -282,7 +281,7 @@ static Block *get_free_block_in_zone_type(ZoneType type, size_t size) {
     if (zone->type == type) {
       Block *block = zone->blocks;
       while (block != NULL) {
-        if (block->free && block->size >= size) {
+        if (block->status != ALLOCATED && block->size >= size) {
           return (block);
         }
         block = block->next;
@@ -323,7 +322,7 @@ static void show_alloc_zone(Zone *zone) {
   printf("%s : %p\n", get_zone_type_str(zone->type), get_zone_start(zone));
   Block *block = zone->blocks;
   while (block != NULL) {
-    if (block->free == true) {
+    if (block->status != ALLOCATED) {
       goto continuing;
     }
     void *start = get_block_start(block);
@@ -378,7 +377,7 @@ void *ft_malloc(size_t size) {
 
   // Use first block in new zone
   block = zone->blocks;
-  if (block->free == true && block->size >= total_size) {
+  if (block->status != ALLOCATED && block->size >= total_size) {
     fragment_block(block, total_size);
     void *result = get_block_start(block);
     unlock_malloc();
@@ -399,6 +398,7 @@ void ft_free(void *ptr) {
 
   Block *block = get_block_from_ptr(ptr);
   if (block == NULL) {
+    printf("Invalid pointer\n");
     unlock_malloc();
     return; // Invalid pointer
   }
@@ -409,30 +409,21 @@ void ft_free(void *ptr) {
     return;
   }
 
-  // Mark block as free
-  block->free = true;
-  if (MALLOC_PERTURB != 0) {
-    memset(get_block_start(block), (0xFF & MALLOC_PERTURB), get_block_size(block));
-  }
+  switch (block->status) {
+    case FREE:
+      printf("Invalid free\n");
+      break;
+    case FREED:
+      printf("Double free\n");
+      break;
+    case ALLOCATED:
+      // Mark block as free
+      block->status = FREED;
+      if (MALLOC_PERTURB != 0) {
+        memset(get_block_start(block), (0xFF & MALLOC_PERTURB), get_block_size(block));
+      }
 
-  coalesce_block(block);
-
-  // Check if entire zone is free
-  if (is_zone_free(zone) == true) {
-    // Remove zone from the doubly linked list
-    if (zone->prev != NULL) {
-      zone->prev->next = zone->next;
-    } else {
-      // This zone is the base (first zone) - update base
-      base = zone->next;
-    }
-
-    if (zone->next != NULL) {
-      zone->next->prev = zone->prev;
-    }
-
-    // Unmap the zone
-    munmap(zone, zone->size);
+      coalesce_block(block);
   }
 
   unlock_malloc();
@@ -491,4 +482,16 @@ void *ft_realloc(void *ptr, size_t size) {
 
   ft_free(ptr);
   return (new_ptr);
+}
+
+__attribute__((destructor))
+static void clean() {
+  Zone *zone = NULL;
+  while (base != NULL) {
+    zone = base->next;
+    if (is_zone_free(base)) {
+      munmap(base, base->size);
+    }
+    base = zone;
+  }
 }
