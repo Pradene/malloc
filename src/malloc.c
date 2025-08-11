@@ -228,8 +228,8 @@ static void fragment_block(Block *block, size_t size) {
   }
 
   block->free = false;
-  if (MALLOC_PERTURB_ != 0) {
-    memset(get_block_start(block), ~(0xFF & MALLOC_PERTURB_), get_block_size(block));
+  if (MALLOC_PERTURB != 0) {
+    memset(get_block_start(block), ~(0xFF & MALLOC_PERTURB), get_block_size(block));
   }
 }
 
@@ -330,7 +330,9 @@ static void show_alloc_zone(Zone *zone) {
     size_t size = get_block_size(block);
     void *end = start + size;
     printf("%p -> %p : %zu bytes\n", start, end, size);
-    print_hex_dump(start, size);
+    if (MALLOC_HEXDUMP != 0) {
+      print_hex_dump(start, size);
+    }
   continuing:
     block = block->next;
   }
@@ -409,8 +411,8 @@ void ft_free(void *ptr) {
 
   // Mark block as free
   block->free = true;
-  if (MALLOC_PERTURB_ != 0) {
-    memset(get_block_start(block), (0xFF & MALLOC_PERTURB_), get_block_size(block));
+  if (MALLOC_PERTURB != 0) {
+    memset(get_block_start(block), (0xFF & MALLOC_PERTURB), get_block_size(block));
   }
 
   coalesce_block(block);
