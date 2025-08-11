@@ -1,6 +1,7 @@
 #ifndef MALLOC_H
 #define MALLOC_H
 
+#include <errno.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -9,12 +10,28 @@
 #include <sys/resource.h>
 #include <unistd.h>
 
+#ifndef MALLOC_ARENA_MAX
+#define MALLOC_ARENA_MAX 0
+#endif
+#ifndef MALLOC_ARENA_TEST
+#define MALLOC_ARENA_TEST 8
+#endif
+#ifndef MALLOC_CHECK_
+#define MALLOC_CHECK_ 0
+#endif
+#ifndef MALLOC_MMAP_MAX_
+#define MALLOC_MMAP_MAX_ 65536
+#endif
+#ifndef MALLOC_PERTURB_
+#define MALLOC_PERTURB_ 0
+#endif
+
 #define ALIGNMENT 16
 
 #define TINY_BLOCK_MAX_SIZE 256
 #define SMALL_BLOCK_MAX_SIZE 4096
 
-#define TINY_ZONE_SIZE TINY_BLOCK_MAX_SIZE * 128
+#define TINY_ZONE_SIZE TINY_BLOCK_MAX_SIZE * 512
 #define SMALL_ZONE_SIZE SMALL_BLOCK_MAX_SIZE * 128
 
 typedef enum { TINY, SMALL, LARGE } ZoneType;

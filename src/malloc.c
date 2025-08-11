@@ -13,6 +13,18 @@ static inline size_t align(size_t value, size_t alignment) {
   return ((value) + (alignment - 1)) & ~(alignment - 1);
 }
 
+static void *get_block_start(Block *block) {
+  return ((char *)block + sizeof(Block));
+}
+
+static void *get_zone_start(Zone *zone) {
+  return ((char *)zone + sizeof(Zone));
+}
+
+static size_t get_block_size(Block *block) {
+  return (block->size - sizeof(Block));
+}
+
 static size_t get_alloc_blocks_size() {
   size_t size = 0;
   Zone *zone = base;
@@ -20,7 +32,7 @@ static size_t get_alloc_blocks_size() {
     Block *block = zone->blocks;
     while (block != NULL) {
       if (block->free == false) {
-        size = size + (block->size - sizeof(Block));
+        size = size + get_block_size(block);
       }
       block = block->next;
     }
@@ -82,8 +94,8 @@ static Block *get_block_from_ptr(void *ptr) {
   while (z != NULL) {
     Block *b = z->blocks;
     while (b != NULL) {
-      void *start = (char *)b + sizeof(Block);
-      void *end = (char *)b + b->size;
+      void *start = get_block_start(b);
+      void *end = start + get_block_size(b);
       if (start <= ptr && ptr < end) {
         return (b);
       }
@@ -151,6 +163,7 @@ static Zone *get_zone(ZoneType type, size_t size) {
   size_t zone_size = align(size + sizeof(Zone), get_os_page_size());
 
   if (can_alloc(zone_size) == false) {
+    errno = ENOMEM;
     return (NULL);
   }
 
@@ -159,6 +172,7 @@ static Zone *get_zone(ZoneType type, size_t size) {
   int flags = MAP_PRIVATE | MAP_ANONYMOUS;
   void *memory = mmap(NULL, zone_size, prot, flags, -1, 0);
   if (memory == MAP_FAILED) {
+    errno = ENOMEM;
     return (NULL);
   }
 
@@ -210,11 +224,12 @@ static void fragment_block(Block *block, size_t size) {
 
     // Update current block
     block->size = size;
-    block->free = false;
     block->next = new_block;
-  } else {
-    // Not enough space to split, use entire block
-    block->free = false;
+  }
+
+  block->free = false;
+  if (MALLOC_PERTURB_ != 0) {
+    memset(get_block_start(block), ~(0xFF & MALLOC_PERTURB_), get_block_size(block));
   }
 }
 
@@ -227,13 +242,12 @@ static void coalesce_block(Block *block) {
   // Coalesce with next block if it's free and adjacent
   while (block->next != NULL && block->next->free) {
     Block *next_block = block->next;
-    // Check if blocks are adjacent in memory
     void *block_end = (char *)block + block->size;
+    // Check if blocks are adjacent in memory
     if ((char *)next_block - (char *)block_end < ALIGNMENT) {
       // Merge blocks
       void *next_block_end = (char *)next_block + next_block->size;
       block->size = (char *)next_block_end - (char *)block;
-
       block->next = next_block->next;
       if (next_block->next != NULL) {
         next_block->next->prev = block; // Continue coalescing block
@@ -284,20 +298,13 @@ static void print_hex_dump(void *ptr, size_t size) {
   size_t bpl = 16;
 
   for (size_t i = 0; i < size; i += bpl) {
-    // Print address
     printf("%p: ", (void *)((char *)ptr + i));
-
-    // Print hex bytes
     for (size_t j = 0; j < bpl && (i + j) < size; j++) {
       printf("%02x ", data[i + j]);
     }
-
-    // Pad with spaces if last line is incomplete
     for (size_t j = size - i; j < bpl && i + bpl >= size; j++) {
       printf("   ");
     }
-
-    // Print ASCII representation
     printf("|");
     for (size_t j = 0; j < bpl && (i + j) < size; j++) {
       unsigned char c = data[i + j];
@@ -313,15 +320,14 @@ static void show_alloc_zone(Zone *zone) {
     return;
   }
 
-  printf("%s : %p\n", get_zone_type_str(zone->type),
-         (char *)zone + sizeof(Zone));
+  printf("%s : %p\n", get_zone_type_str(zone->type), get_zone_start(zone));
   Block *block = zone->blocks;
   while (block != NULL) {
     if (block->free == true) {
       goto continuing;
     }
-    size_t size = block->size - sizeof(Block);
-    void *start = (char *)block + sizeof(Block);
+    void *start = get_block_start(block);
+    size_t size = get_block_size(block);
     void *end = start + size;
     printf("%p -> %p : %zu bytes\n", start, end, size);
     print_hex_dump(start, size);
@@ -355,7 +361,7 @@ void *ft_malloc(size_t size) {
   Block *block = get_free_block_in_zone_type(type, total_size);
   if (block != NULL) {
     fragment_block(block, total_size);
-    void *result = (void *)((char *)block + sizeof(Block));
+    void *result = get_block_start(block);
     unlock_malloc();
     return result;
   }
@@ -363,6 +369,7 @@ void *ft_malloc(size_t size) {
   // Create new zone
   Zone *zone = get_zone(type, total_size);
   if (zone == NULL) {
+    errno = ENOMEM;
     unlock_malloc();
     return (NULL);
   }
@@ -371,11 +378,12 @@ void *ft_malloc(size_t size) {
   block = zone->blocks;
   if (block->free == true && block->size >= total_size) {
     fragment_block(block, total_size);
-    void *result = (void *)((char *)block + sizeof(Block));
+    void *result = get_block_start(block);
     unlock_malloc();
     return result;
   }
 
+  errno = ENOMEM;
   unlock_malloc();
   return (NULL);
 }
@@ -401,6 +409,10 @@ void ft_free(void *ptr) {
 
   // Mark block as free
   block->free = true;
+  if (MALLOC_PERTURB_ != 0) {
+    memset(get_block_start(block), (0xFF & MALLOC_PERTURB_), get_block_size(block));
+  }
+
   coalesce_block(block);
 
   // Check if entire zone is free
@@ -440,6 +452,7 @@ void *ft_realloc(void *ptr, size_t size) {
 
   Block *block = get_block_from_ptr(ptr);
   if (block == NULL) {
+    errno = ENOMEM;
     unlock_malloc();
     return (NULL);
   }
@@ -466,6 +479,7 @@ void *ft_realloc(void *ptr, size_t size) {
   // Need new allocation - unlock first to avoid deadlock
   void *new_ptr = ft_malloc(size);
   if (new_ptr == NULL) {
+    errno = ENOMEM;
     return (NULL);
   }
 
