@@ -28,6 +28,8 @@
 #define TINY_ZONE_SIZE TINY_BLOCK_MAX_SIZE * 512
 #define SMALL_ZONE_SIZE SMALL_BLOCK_MAX_SIZE * 128
 
+void abort(void) __attribute__((noreturn));
+
 typedef enum { TINY, SMALL, LARGE } ZoneType;
 typedef enum { FREE, ALLOCATED, FREED } BlockStatus;
 
@@ -39,9 +41,9 @@ typedef struct __attribute__((aligned(ALIGNMENT))) Block {
 } Block;
 
 typedef struct __attribute__((aligned(ALIGNMENT))) Zone {
-  size_t size; // total page size
+  size_t size;
   ZoneType type;
-  Block *blocks; // linked list of blocks inside this page
+  Block *blocks;
   struct Zone *prev;
   struct Zone *next;
 } Zone;

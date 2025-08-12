@@ -9,8 +9,6 @@ static pthread_mutex_t malloc_mutex = PTHREAD_MUTEX_INITIALIZER;
 static inline void lock_malloc() { pthread_mutex_lock(&malloc_mutex); }
 static inline void unlock_malloc() { pthread_mutex_unlock(&malloc_mutex); }
 
-void abort(void) __attribute__((noreturn));
-
 static inline size_t align(size_t value, size_t alignment) {
   return ((value) + (alignment - 1)) & ~(alignment - 1);
 }
