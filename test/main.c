@@ -14,6 +14,7 @@ int main() {
   show_alloc_mem();
 
   ft_free(p1);
+  ft_free(p1);
   ft_free(p2);
   ft_free(p3);
   ft_free(p4);

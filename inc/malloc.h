@@ -11,7 +11,7 @@
 #include <unistd.h>
 
 #ifndef MALLOC_CHECK
-#define MALLOC_CHECK 0
+#define MALLOC_CHECK 3
 #endif
 #ifndef MALLOC_PERTURB
 #define MALLOC_PERTURB 0

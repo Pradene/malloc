@@ -1,13 +1,15 @@
 #include "malloc.h"
 
 // Global pointer to store linked list of zones
-Zone *base = NULL;
+static Zone *base = NULL;
 
 // Global mutex to protect all malloc operations
 static pthread_mutex_t malloc_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static inline void lock_malloc() { pthread_mutex_lock(&malloc_mutex); }
 static inline void unlock_malloc() { pthread_mutex_unlock(&malloc_mutex); }
+
+void abort(void) __attribute__((noreturn));
 
 static inline size_t align(size_t value, size_t alignment) {
   return ((value) + (alignment - 1)) & ~(alignment - 1);
@@ -145,6 +147,8 @@ static const char *get_zone_type_str(ZoneType type) {
 }
 
 // Create a new zone with initial free block
+// If type is large you must provide the size
+// Else doesn't need to send size because it is calculated
 static Zone *get_zone(ZoneType type, size_t size) {
   // Calculate total size needed
   switch (type) {
@@ -414,23 +418,46 @@ void ft_free(void *ptr) {
 
   Block *block = get_block_from_ptr(ptr);
   if (block == NULL) {
-    printf("Invalid pointer\n");
     unlock_malloc();
-    return; // Invalid pointer
+    if ((MALLOC_CHECK >> 2) & 1) {
+      printf("ft_free(): Invalid pointer: %p\n", ptr);
+    } else if ((MALLOC_CHECK >> 0) & 1) {
+      printf("ft_free(): Invalid pointer\n");
+    }
+    if ((MALLOC_CHECK >> 1) & 1) {
+      abort();
+    }
+    return;
   }
 
   Zone *zone = get_zone_from_block(block);
   if (zone == NULL) {
+    // Should not happen
     unlock_malloc();
     return;
   }
 
   switch (block->status) {
     case FREE:
-      printf("Invalid free\n");
       break;
+      if ((MALLOC_CHECK >> 2) & 1) {
+        printf("ft_free(): Invalid pointer: %p\n", ptr);
+      } else if ((MALLOC_CHECK >> 0) & 1) {
+        printf("ft_free(): Invalid pointer\n");
+      }
+      if ((MALLOC_CHECK >> 1) & 1) {
+        abort();
+      }
     case FREED:
-      printf("Double free\n");
+      if ((MALLOC_CHECK >> 2) & 1) {
+        printf("ft_free(): Double free: %p\n", ptr);
+      } else if ((MALLOC_CHECK >> 0) & 1) {
+        printf("ft_free(): Double free\n");
+      }
+
+      if ((MALLOC_CHECK >> 1) & 1) {
+        abort();
+      }
       break;
     case ALLOCATED:
       // Mark block as free
@@ -517,3 +544,4 @@ static void clean() {
     base = zone;
   }
 }
+
