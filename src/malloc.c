@@ -246,7 +246,7 @@ static void fragment_block(Block *block, size_t size) {
 
   block->status = ALLOCATED;
   if (MALLOC_PERTURB != 0) {
-    memset(get_block_start(block), ~(0xFF & MALLOC_PERTURB), get_block_size(block));
+    ft_memset(get_block_start(block), ~(0xFF & MALLOC_PERTURB), get_block_size(block));
   }
 }
 
@@ -315,20 +315,20 @@ static void print_hex_dump(void *ptr, size_t size) {
   size_t bytes_per_line = 16;
 
   for (size_t i = 0; i < size; i += bytes_per_line) {
-    printf("%p: ", (void *)((char *)ptr + i));
+    ft_printf("%p: ", (void *)((char *)ptr + i));
     for (size_t j = 0; j < bytes_per_line && (i + j) < size; j++) {
-      printf("%02x ", data[i + j]);
+      ft_printf("%02x ", data[i + j]);
     }
     for (size_t j = size - i; j < bytes_per_line && i + bytes_per_line >= size; j++) {
-      printf("   ");
+      ft_printf("   ");
     }
-    printf("|");
+    ft_printf("|");
     for (size_t j = 0; j < bytes_per_line && (i + j) < size; j++) {
       unsigned char c = data[i + j];
-      printf("%c", (c >= 32 && c <= 126) ? c : '.');
+      ft_printf("%c", (c >= 32 && c <= 126) ? c : '.');
     }
-    printf("|");
-    printf("\n");
+    ft_printf("|");
+    ft_printf("\n");
   }
 }
 
@@ -337,7 +337,7 @@ static void show_alloc_zone(Zone *zone) {
     return;
   }
 
-  printf("%s : %p\n", get_zone_type_str(zone->type), get_zone_start(zone));
+  ft_printf("%s : %p\n", get_zone_type_str(zone->type), get_zone_start(zone));
   Block *block = zone->blocks;
   while (block != NULL) {
     if (block->status != ALLOCATED) {
@@ -346,7 +346,7 @@ static void show_alloc_zone(Zone *zone) {
     void *start = get_block_start(block);
     size_t size = get_block_size(block);
     void *end = start + size;
-    printf("%p -> %p : %zu bytes\n", start, end, size);
+    ft_printf("%p -> %p : %z bytes\n", start, end, size);
     if (MALLOC_HEXDUMP != 0) {
       print_hex_dump(start, size);
     }
@@ -362,11 +362,11 @@ void show_alloc_mem() {
     show_alloc_zone(zone);
     zone = zone->next;
   }
-  printf("Total : %zu bytes\n", get_alloc_blocks_size());
+  ft_printf("Total : %z bytes\n", get_alloc_blocks_size());
   unlock_malloc();
 }
 
-void *ft_malloc(size_t size) {
+void *malloc(size_t size) {
   if (size == 0) {
     return (NULL);
   }
@@ -407,7 +407,7 @@ void *ft_malloc(size_t size) {
   return (NULL);
 }
 
-void ft_free(void *ptr) {
+void free(void *ptr) {
   if (ptr == NULL) {
     return;
   }
@@ -418,9 +418,9 @@ void ft_free(void *ptr) {
   if (block == NULL) {
     unlock_malloc();
     if ((MALLOC_CHECK >> 2) & 1) {
-      printf("ft_free(): Invalid pointer: %p\n", ptr);
+      ft_printf("free(): Invalid pointer: %p\n", ptr);
     } else if ((MALLOC_CHECK >> 0) & 1) {
-      printf("ft_free(): Invalid pointer\n");
+      ft_printf("free(): Invalid pointer\n");
     }
     if ((MALLOC_CHECK >> 1) & 1) {
       abort();
@@ -439,18 +439,18 @@ void ft_free(void *ptr) {
     case FREE:
       break;
       if ((MALLOC_CHECK >> 2) & 1) {
-        printf("ft_free(): Invalid pointer: %p\n", ptr);
+        ft_printf("free(): Invalid pointer: %p\n", ptr);
       } else if ((MALLOC_CHECK >> 0) & 1) {
-        printf("ft_free(): Invalid pointer\n");
+        ft_printf("free(): Invalid pointer\n");
       }
       if ((MALLOC_CHECK >> 1) & 1) {
         abort();
       }
     case FREED:
       if ((MALLOC_CHECK >> 2) & 1) {
-        printf("ft_free(): Double free: %p\n", ptr);
+        ft_printf("free(): Double free: %p\n", ptr);
       } else if ((MALLOC_CHECK >> 0) & 1) {
-        printf("ft_free(): Double free\n");
+        ft_printf("free(): Double free\n");
       }
 
       if ((MALLOC_CHECK >> 1) & 1) {
@@ -470,15 +470,15 @@ void ft_free(void *ptr) {
   unlock_malloc();
 }
 
-void *ft_realloc(void *ptr, size_t size) {
+void *realloc(void *ptr, size_t size) {
   // If ptr is NULL, behave like malloc
   if (ptr == NULL) {
-    return (ft_malloc(size));
+    return (malloc(size));
   }
 
   // If size is 0, behave like free
   if (size == 0) {
-    ft_free(ptr);
+    free(ptr);
     return (NULL);
   }
 
@@ -511,7 +511,7 @@ void *ft_realloc(void *ptr, size_t size) {
   unlock_malloc();
 
   // Need new allocation - unlock first to avoid deadlock
-  void *new_ptr = ft_malloc(size);
+  void *new_ptr = malloc(size);
   if (new_ptr == NULL) {
     errno = ENOMEM;
     return (NULL);
@@ -519,9 +519,9 @@ void *ft_realloc(void *ptr, size_t size) {
 
   // Copy minimum of old and new user data sizes
   size_t copy_size = (current_user_size < size) ? current_user_size : size;
-  memcpy(new_ptr, ptr, copy_size);
+  ft_memcpy(new_ptr, ptr, copy_size);
 
-  ft_free(ptr);
+  free(ptr);
   return (new_ptr);
 }
 

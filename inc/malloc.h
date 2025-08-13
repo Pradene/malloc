@@ -10,6 +10,8 @@
 #include <sys/resource.h>
 #include <unistd.h>
 
+#include "libft.h"
+
 #ifndef MALLOC_CHECK
 #define MALLOC_CHECK 3
 #endif
@@ -17,7 +19,7 @@
 #define MALLOC_PERTURB 0
 #endif
 #ifndef MALLOC_HEXDUMP
-#define MALLOC_HEXDUMP 0
+#define MALLOC_HEXDUMP 1
 #endif
 
 #define ALIGNMENT 16
@@ -48,9 +50,9 @@ typedef struct __attribute__((aligned(ALIGNMENT))) Zone {
   struct Zone *next;
 } Zone;
 
-void *ft_malloc(size_t size);
-void *ft_realloc(void *ptr, size_t size);
-void ft_free(void *ptr);
+void *malloc(size_t size);
+void *realloc(void *ptr, size_t size);
+void free(void *ptr);
 void show_alloc_mem();
 
 #endif
