@@ -4,7 +4,7 @@
 static Zone *base = NULL;
 
 // Global mutex to protect all malloc operations
-static pthread_mutex_t malloc_mutex = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t malloc_mutex;
 
 static inline void lock_malloc() { pthread_mutex_lock(&malloc_mutex); }
 static inline void unlock_malloc() { pthread_mutex_unlock(&malloc_mutex); }
@@ -374,6 +374,11 @@ void *malloc(size_t size) {
   lock_malloc();
 
   size_t total_size = size + sizeof(Block);
+  if (total_size < size) {
+    // Overflow
+    unlock_malloc();
+    return (NULL);
+  }
 
   // Try to find existing free block
   ZoneType type = get_zone_type(total_size);
@@ -437,7 +442,6 @@ void free(void *ptr) {
 
   switch (block->status) {
     case FREE:
-      break;
       if ((MALLOC_CHECK >> 2) & 1) {
         ft_printf("free(): Invalid pointer: %p\n", ptr);
       } else if ((MALLOC_CHECK >> 0) & 1) {
@@ -446,13 +450,13 @@ void free(void *ptr) {
       if ((MALLOC_CHECK >> 1) & 1) {
         abort();
       }
+      break;
     case FREED:
       if ((MALLOC_CHECK >> 2) & 1) {
         ft_printf("free(): Double free: %p\n", ptr);
       } else if ((MALLOC_CHECK >> 0) & 1) {
         ft_printf("free(): Double free\n");
       }
-
       if ((MALLOC_CHECK >> 1) & 1) {
         abort();
       }
@@ -461,10 +465,10 @@ void free(void *ptr) {
       // Mark block as free
       block->status = FREED;
       if (MALLOC_PERTURB != 0) {
-        memset(get_block_start(block), (0xFF & MALLOC_PERTURB), get_block_size(block));
+        ft_memset(get_block_start(block), (0xFF & MALLOC_PERTURB), get_block_size(block));
       }
-
       coalesce_block(block);
+      break;
   }
 
   unlock_malloc();
@@ -527,6 +531,12 @@ void *realloc(void *ptr, size_t size) {
 
 __attribute__((constructor))
 static void init() {
+  pthread_mutexattr_t attr;
+  pthread_mutexattr_init(&attr);
+  pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+  pthread_mutex_init(&malloc_mutex, &attr);
+  pthread_mutexattr_destroy(&attr);
+
   get_zone(TINY, 0);
   get_zone(SMALL, 0);
 }
