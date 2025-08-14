@@ -18,9 +18,6 @@
 #ifndef MALLOC_PERTURB
 #define MALLOC_PERTURB 0
 #endif
-#ifndef MALLOC_HEXDUMP
-#define MALLOC_HEXDUMP 1
-#endif
 
 #define ALIGNMENT 16
 
@@ -54,5 +51,6 @@ void *malloc(size_t size);
 void *realloc(void *ptr, size_t size);
 void free(void *ptr);
 void show_alloc_mem();
+void show_alloc_mem_ex();
 
 #endif

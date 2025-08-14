@@ -363,7 +363,7 @@ static void print_hex_dump(void *ptr, size_t size) {
   }
 }
 
-static void show_alloc_zone(Zone *zone) {
+static void show_alloc_zone(Zone *zone, bool hex) {
   if (zone == NULL) {
     return;
   }
@@ -381,7 +381,7 @@ static void show_alloc_zone(Zone *zone) {
     size_t size = get_block_size(block);
     void *end = start + size;
     ft_printf("%p -> %p : %z bytes\n", start, end, size);
-    if (MALLOC_HEXDUMP != 0) {
+    if (hex == true) {
       print_hex_dump(start, size);
     }
   continuing:
@@ -394,7 +394,18 @@ void show_alloc_mem() {
   lock_malloc();
   Zone *zone = base;
   while (zone != NULL) {
-    show_alloc_zone(zone);
+    show_alloc_zone(zone, false);
+    zone = zone->next;
+  }
+  ft_printf("Total : %z bytes\n", get_alloc_blocks_size());
+  unlock_malloc();
+}
+
+void show_alloc_mem_ex() {
+  lock_malloc();
+  Zone *zone = base;
+  while (zone != NULL) {
+    show_alloc_zone(zone, true);
     zone = zone->next;
   }
   ft_printf("Total : %z bytes\n", get_alloc_blocks_size());
