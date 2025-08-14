@@ -22,8 +22,8 @@ static int tests_failed = 0;
 static int total_tests = 0;
 
 // Thread test data
-#define NUM_THREADS 6
-#define ALLOCS_PER_THREAD 1000
+#define NUM_THREADS 8
+#define ALLOCS_PER_THREAD 10000
 
 typedef struct {
     int thread_id;
@@ -35,17 +35,17 @@ typedef struct {
 void test_result(const char* test_name, int passed) {
     total_tests++;
     if (passed) {
-        printf("[%sPASS%s] %s\n", GREEN, RESET, test_name);
+        ft_printf("[%sPASS%s] %s\n", GREEN, RESET, test_name);
         tests_passed++;
     } else {
-        printf("[%sFAIL%s] %s\n", RED, RESET, test_name);
+        ft_printf("[%sFAIL%s] %s\n", RED, RESET, test_name);
         tests_failed++;
     }
 }
 
 // Basic allocation tests
 void test_basic_allocation() {
-    printf("\n%s=== BASIC ALLOCATION TESTS ===%s\n", BLUE, RESET);
+    ft_printf("\n%s=== BASIC ALLOCATION TESTS ===%s\n", BLUE, RESET);
 
     // Test 1: Simple allocation and free
     void *ptr = malloc(100);
@@ -83,7 +83,7 @@ void test_basic_allocation() {
 }
 
 void test_edge_cases() {
-    printf("\n%s=== EDGE CASE TESTS ===%s\n", BLUE, RESET);
+    ft_printf("\n%s=== EDGE CASE TESTS ===%s\n", BLUE, RESET);
 
     // Test 1: Very large allocation
     void *ptr = malloc(SIZE_MAX);
@@ -103,7 +103,7 @@ void test_edge_cases() {
 }
 
 void test_alignment() {
-    printf("\n%s=== ALIGNMENT TESTS ===%s\n", BLUE, RESET);
+    ft_printf("\n%s=== ALIGNMENT TESTS ===%s\n", BLUE, RESET);
 
     // Test alignment for different sizes
     size_t sizes[] = {1, 2, 3, 4, 5, 7, 8, 15, 16, 17, 31, 32, 33, 63, 64, 65};
@@ -168,7 +168,7 @@ void test_stress_sequential() {
 }
 
 void test_fragmentation() {
-    printf("\n%s=== FRAGMENTATION TESTS ===%s\n", BLUE, RESET);
+    ft_printf("\n%s=== FRAGMENTATION TESTS ===%s\n", BLUE, RESET);
 
     // Create fragmentation pattern
     void **ptrs = malloc(1000 * sizeof(void*));
@@ -256,7 +256,7 @@ void* thread_malloc_test(void* arg) {
 
 
 void test_concurrent_malloc() {
-    printf("\n%s=== CONCURRENT MALLOC TESTS ===%s\n", BLUE, RESET);
+    ft_printf("\n%s=== CONCURRENT MALLOC TESTS ===%s\n", BLUE, RESET);
 
     pthread_t threads[NUM_THREADS];
     thread_data_t thread_data[NUM_THREADS];
@@ -268,14 +268,11 @@ void test_concurrent_malloc() {
         thread_data[i].fail_count = 0;
     }
 
-    struct timeval start, end;
-    gettimeofday(&start, NULL);
-
     // Create threads
     for (int i = 0; i < NUM_THREADS; i++) {
         int ret = pthread_create(&threads[i], NULL, thread_malloc_test, &thread_data[i]);
         if (ret != 0) {
-            printf("Failed to create thread %d: %s\n", i, strerror(ret));
+            ft_printf("Failed to create thread %d: %s\n", i, strerror(ret));
             thread_data[i].fail_count = ALLOCS_PER_THREAD;
         }
     }
@@ -285,22 +282,18 @@ void test_concurrent_malloc() {
         pthread_join(threads[i], NULL);
     }
 
-    gettimeofday(&end, NULL);
-    double elapsed = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1000000.0;
-
     // Collect results
     int total_success = 0, total_fail = 0;
     for (int i = 0; i < NUM_THREADS; i++) {
         total_success += thread_data[i].success_count;
         total_fail += thread_data[i].fail_count;
-        printf("Thread %d: %d success, %d failures\n", 
+        ft_printf("Thread %d: %d success, %d failures\n", 
                thread_data[i].thread_id, 
                thread_data[i].success_count, 
                thread_data[i].fail_count);
     }
 
-    printf("Concurrent test completed in %.2f seconds\n", elapsed);
-    printf("Total: %d successes, %d failures\n", total_success, total_fail);
+    ft_printf("Total: %d successes, %d failures\n", total_success, total_fail);
 
     // Test passes if most allocations succeeded
     double success_rate = (double)total_success / (total_success + total_fail);
@@ -308,7 +301,7 @@ void test_concurrent_malloc() {
 }
 
 void test_realloc_scenarios() {
-    printf("\n%s=== REALLOC TESTS ===%s\n", BLUE, RESET);
+    ft_printf("\n%s=== REALLOC TESTS ===%s\n", BLUE, RESET);
 
     // Test 1: Basic realloc
     void *ptr = malloc(100);
@@ -348,7 +341,7 @@ void test_realloc_scenarios() {
 }
 
 void test_memory_patterns() {
-    printf("\n%s=== MEMORY PATTERN TESTS ===%s\n", BLUE, RESET);
+    ft_printf("\n%s=== MEMORY PATTERN TESTS ===%s\n", BLUE, RESET);
 
     // Test various allocation patterns
     void *ptrs[100];
@@ -397,68 +390,26 @@ void test_memory_patterns() {
     test_result("Power-of-2 size allocations", success_count > 18);
 }
 
-void performance_benchmark() {
-    printf("\n%s=== PERFORMANCE BENCHMARK ===%s\n", BLUE, RESET);
-
-    const int num_ops = 10000;
-    struct timeval start, end;
-
-    // Benchmark 1: Sequential allocations
-    gettimeofday(&start, NULL);
-    void **ptrs = malloc(num_ops * sizeof(void*));
-    for (int i = 0; i < num_ops; i++) {
-        ptrs[i] = malloc(64);
-    }
-    for (int i = 0; i < num_ops; i++) {
-        if (ptrs[i]) free(ptrs[i]);
-    }
-    free(ptrs);
-    gettimeofday(&end, NULL);
-
-    double sequential_time = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1000000.0;
-    printf("Sequential %d alloc/free pairs: %.3f seconds (%.0f ops/sec)\n", 
-           num_ops, sequential_time, num_ops / sequential_time);
-
-    // Benchmark 2: Random size allocations
-    gettimeofday(&start, NULL);
-    ptrs = malloc(num_ops * sizeof(void*));
-    for (int i = 0; i < num_ops; i++) {
-        size_t size = (rand() % 1000) + 1;
-        ptrs[i] = malloc(size);
-    }
-    for (int i = 0; i < num_ops; i++) {
-        if (ptrs[i]) free(ptrs[i]);
-    }
-    free(ptrs);
-    gettimeofday(&end, NULL);
-
-    double random_time = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1000000.0;
-    printf("Random size %d alloc/free pairs: %.3f seconds (%.0f ops/sec)\n", 
-           num_ops, random_time, num_ops / random_time);
-
-    test_result("Performance benchmark completed", 1);
-}
-
 void print_summary() {
-    printf("\n%s=== TEST SUMMARY ===%s\n", BLUE, RESET);
-    printf("Total tests: %d\n", total_tests);
-    printf("Passed: %s%d%s\n", GREEN, tests_passed, RESET);
-    printf("Failed: %s%d%s\n", RED, tests_failed, RESET);
+    ft_printf("\n%s=== TEST SUMMARY ===%s\n", BLUE, RESET);
+    ft_printf("Total tests: %d\n", total_tests);
+    ft_printf("Passed: %s%d%s\n", GREEN, tests_passed, RESET);
+    ft_printf("Failed: %s%d%s\n", RED, tests_failed, RESET);
 
     if (tests_failed == 0) {
-        printf("\n%s🎉 ALL TESTS PASSED! 🎉%s\n", GREEN, RESET);
+        ft_printf("\n%s🎉 ALL TESTS PASSED! 🎉%s\n", GREEN, RESET);
     } else {
-        printf("\n%s⚠️  Some tests failed. Review the output above. ⚠️%s\n", YELLOW, RESET);
+        ft_printf("\n%s⚠️  Some tests failed. Review the output above. ⚠️%s\n", YELLOW, RESET);
     }
 
-    double success_rate = (double)tests_passed / total_tests * 100;
-    printf("Success rate: %.1f%%\n", success_rate);
+    int success_rate = tests_passed / total_tests * 100;
+    ft_printf("Success rate: %d%%\n", success_rate);
 }
 
 int main() {
-    printf("%s=== COMPREHENSIVE MALLOC TEST SUITE ===%s\n", BLUE, RESET);
-    printf("Testing system malloc implementation\n");
-    printf("Compiled on %s at %s\n", __DATE__, __TIME__);
+    ft_printf("%s=== COMPREHENSIVE MALLOC TEST SUITE ===%s\n", BLUE, RESET);
+    ft_printf("Testing system malloc implementation\n");
+    ft_printf("Compiled on %s at %s\n", __DATE__, __TIME__);
 
     // Seed random number generator
     srand(time(NULL));
@@ -471,7 +422,6 @@ int main() {
     test_fragmentation();
     test_realloc_scenarios();
     test_memory_patterns();
-    performance_benchmark();
     test_concurrent_malloc();
 
     // Print final summary

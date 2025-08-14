@@ -5,7 +5,7 @@ endif
 NAME     = libft_malloc_$(HOSTTYPE).so
 LINK     = libft_malloc.so
 CC       = cc
-CFLAGS   = -Wall -Wextra -Werror -Iinc -I$(LIBFT_DIR)/inc -g
+CFLAGS   = -Wall -Wextra -Werror -Iinc -I$(LIBFT_DIR)/inc
 SRCS_DIR = src
 OBJS_DIR = obj
 TEST_DIR = test

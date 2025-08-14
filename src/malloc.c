@@ -4,7 +4,7 @@
 static Zone *base = NULL;
 
 // Global mutex to protect all malloc operations
-static pthread_mutex_t malloc_mutex;
+static pthread_mutex_t malloc_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static inline void lock_malloc() { pthread_mutex_lock(&malloc_mutex); }
 static inline void unlock_malloc() { pthread_mutex_unlock(&malloc_mutex); }
@@ -90,15 +90,36 @@ static size_t get_os_page_size() {
 }
 
 static Block *get_block_from_ptr(void *ptr) {
+  if (ptr == NULL) {
+    return (NULL);
+  }
   Zone *z = base;
   while (z != NULL) {
-    Block *b = z->blocks;
-    while (b != NULL) {
-      void *start = get_block_start(b);
-      if (start == ptr) {
-        return (b);
+    // Validate zone pointer before dereferencing
+    if (z->size == 0) { // Sanity check
+      break;
+    }
+    // Check if ptr is within this zone's bounds
+    void *zone_start = get_zone_start(z);
+    void *zone_end = (char *)z + z->size;
+    if (ptr >= zone_start && ptr < zone_end) {
+      Block *b = z->blocks;
+      int block_count = 0;  // Loop detection
+      const int max_blocks = (z->size - sizeof(Zone)) / sizeof(Block);
+      while (b != NULL && block_count < max_blocks) {
+        // Validate block pointer is within zone
+        if ((void *)b < zone_start || (void *)b >= zone_end) {
+          break;
+        }
+        void *start = get_block_start(b);
+        if (start == ptr) {
+          return (b);
+        }
+        b = b->next;
+        block_count++;
       }
-      b = b->next;
+      // If we reach here, ptr is in zone but not found (corrupted)
+      return (NULL);
     }
     z = z->next;
   }
@@ -106,14 +127,16 @@ static Block *get_block_from_ptr(void *ptr) {
 }
 
 static Zone *get_zone_from_block(Block *block) {
+  if (block == NULL) {
+    return (NULL);
+  }
   Zone *z = base;
   while (z != NULL) {
-    Block *b = z->blocks;
-    while (b != NULL) {
-      if (b == block) {
-        return (z);
-      }
-      b = b->next;
+    // Check if block is within this zone's bounds
+    void *zone_start = (char *)z + sizeof(Zone);
+    void *zone_end = (char *)z + z->size;
+    if ((void *)block >= zone_start && (void *)block < zone_end) {
+      return (z);
     }
     z = z->next;
   }
@@ -216,11 +239,17 @@ static Zone *get_zone(ZoneType type, size_t size) {
 }
 
 static void fragment_block(Block *block, size_t size) {
-  if (block == NULL) {
+  if (block == NULL || size < sizeof(Block)) {
     return;
   }
 
   size_t aligned_size = align(size, ALIGNMENT);
+
+  // Ensure we don't exceed block size
+  if (aligned_size > block->size) {
+    aligned_size = block->size;
+  }
+
   size_t remaining_size = block->size - aligned_size;
 
   // Need enough space for new Block header + minimum alignment
@@ -250,24 +279,28 @@ static void fragment_block(Block *block, size_t size) {
   }
 }
 
-// Coalesce adjacent free blocks for defragmentation
 static void coalesce_block(Block *block) {
   if (block == NULL || block->status == ALLOCATED) {
     return;
   }
 
-  // Coalesce with next block if it's free and adjacent
+  // Set status to FREE if it was FREED
+  if (block->status == FREED) {
+    block->status = FREE;
+  }
+
+  // Coalesce with next block if it's free and exactly adjacent
   while (block->next != NULL && block->next->status != ALLOCATED) {
     Block *next_block = block->next;
     void *block_end = (char *)block + block->size;
-    // Check if blocks are adjacent in memory
+    // Check if blocks are exactly adjacent in memory
     if ((char *)next_block - (char *)block_end < ALIGNMENT) {
       // Merge blocks
       void *next_block_end = (char *)next_block + next_block->size;
       block->size = (char *)next_block_end - (char *)block;
       block->next = next_block->next;
       if (next_block->next != NULL) {
-        next_block->next->prev = block; // Continue coalescing block
+        next_block->next->prev = block;
       }
     } else {
       // Blocks are not adjacent, stop coalescing
@@ -275,34 +308,46 @@ static void coalesce_block(Block *block) {
     }
   }
 
-  // Coalesce with previous block if it's free and adjacent
-  while (block->prev != NULL && block->prev->status != ALLOCATED) {
+  // Coalesce with previous block if it's free and exactly adjacent
+  if (block->prev != NULL && block->prev->status != ALLOCATED) {
     Block *prev_block = block->prev;
     void *prev_end = (char *)prev_block + prev_block->size;
-    if ((char *)block - (char *)prev_end < ALIGNMENT) {
-      void *block_end = (char *)block + block->size;
-      prev_block->size = (char *)block_end - (char *)prev_block;
+
+    // Check if blocks are exactly adjacent
+    if ((char *)block == prev_end) {
+      // Merge with previous block
+      prev_block->size += block->size;
       prev_block->next = block->next;
       if (block->next != NULL) {
         block->next->prev = prev_block;
       }
-      block = prev_block; // Continue coalescing block
-    } else {
-      break;
     }
   }
 }
 
 static Block *get_free_block_in_zone_type(ZoneType type, size_t size) {
   Zone *zone = base;
+
   while (zone != NULL) {
-    if (zone->type == type) {
+    if (zone->type == type && zone->size > 0) {
       Block *block = zone->blocks;
-      while (block != NULL) {
-        if (block->status != ALLOCATED && block->size >= size) {
+      int block_count = 0;
+      const int max_blocks = (zone->size - sizeof(Zone)) / sizeof(Block);
+
+      void *zone_start = get_zone_start(zone);
+      void *zone_end = (char *)zone + zone->size;
+
+      while (block != NULL && block_count < max_blocks) {
+        // Validate block is within zone bounds
+        if ((void *)block < zone_start || (void *)block >= zone_end) {
+          break;
+        }
+
+        if (block->status == FREE && block->size >= size) {
           return (block);
         }
         block = block->next;
+        block_count++;
       }
     }
     zone = zone->next;
@@ -339,7 +384,10 @@ static void show_alloc_zone(Zone *zone) {
 
   ft_printf("%s : %p\n", get_zone_type_str(zone->type), get_zone_start(zone));
   Block *block = zone->blocks;
-  while (block != NULL) {
+  int block_count = 0;
+  const int max_blocks = zone->size / sizeof(Block);
+  
+  while (block != NULL && block_count < max_blocks) {
     if (block->status != ALLOCATED) {
       goto continuing;
     }
@@ -352,6 +400,7 @@ static void show_alloc_zone(Zone *zone) {
     }
   continuing:
     block = block->next;
+    block_count++;
   }
 }
 
@@ -377,6 +426,7 @@ void *malloc(size_t size) {
   if (total_size < size) {
     // Overflow
     unlock_malloc();
+    errno = ENOMEM;
     return (NULL);
   }
 
@@ -400,7 +450,7 @@ void *malloc(size_t size) {
 
   // Use first block in new zone
   block = zone->blocks;
-  if (block->status != ALLOCATED && block->size >= total_size) {
+  if (block->status == FREE && block->size >= total_size) {
     fragment_block(block, total_size);
     void *result = get_block_start(block);
     unlock_malloc();
@@ -433,24 +483,8 @@ void free(void *ptr) {
     return;
   }
 
-  Zone *zone = get_zone_from_block(block);
-  if (zone == NULL) {
-    // Should not happen
-    unlock_malloc();
-    return;
-  }
-
   switch (block->status) {
     case FREE:
-      if ((MALLOC_CHECK >> 2) & 1) {
-        ft_printf("free(): Invalid pointer: %p\n", ptr);
-      } else if ((MALLOC_CHECK >> 0) & 1) {
-        ft_printf("free(): Invalid pointer\n");
-      }
-      if ((MALLOC_CHECK >> 1) & 1) {
-        abort();
-      }
-      break;
     case FREED:
       if ((MALLOC_CHECK >> 2) & 1) {
         ft_printf("free(): Double free: %p\n", ptr);
@@ -460,9 +494,10 @@ void free(void *ptr) {
       if ((MALLOC_CHECK >> 1) & 1) {
         abort();
       }
-      break;
+      unlock_malloc();
+      return;
     case ALLOCATED:
-      // Mark block as free
+      // Mark block as freed and clear data
       block->status = FREED;
       if (MALLOC_PERTURB != 0) {
         ft_memset(get_block_start(block), (0xFF & MALLOC_PERTURB), get_block_size(block));
@@ -489,18 +524,19 @@ void *realloc(void *ptr, size_t size) {
   lock_malloc();
 
   Block *block = get_block_from_ptr(ptr);
-  if (block == NULL) {
-    errno = ENOMEM;
+  if (block == NULL || block->status != ALLOCATED) {
+    errno = EINVAL;
     unlock_malloc();
     return (NULL);
   }
 
   size_t new_total_size = align(size + sizeof(Block), ALIGNMENT);
-  size_t current_user_size = block->size - sizeof(Block);
+  size_t current_user_size = get_block_size(block);
 
   // Determine zone types
   ZoneType new_type = get_zone_type(new_total_size);
-  ZoneType current_type = get_zone_type(block->size);
+  Zone *current_zone = get_zone_from_block(block);
+  ZoneType current_type = current_zone ? current_zone->type : LARGE;
 
   // If same zone type and current block is large enough
   if (new_type == current_type && block->size >= new_total_size) {
@@ -543,6 +579,7 @@ static void init() {
 
 __attribute__((destructor))
 static void clean() {
+  lock_malloc();
   Zone *zone = NULL;
   while (base != NULL) {
     zone = base->next;
@@ -551,5 +588,6 @@ static void clean() {
     }
     base = zone;
   }
+  unlock_malloc();
+  pthread_mutex_destroy(&malloc_mutex);
 }
-
