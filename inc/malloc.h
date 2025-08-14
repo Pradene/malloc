@@ -16,13 +16,13 @@
 #define MALLOC_CHECK 5
 #endif
 #ifndef MALLOC_PERTURB
-#define MALLOC_PERTURB 0
+#define MALLOC_PERTURB 190
 #endif
 #ifndef MALLOC_HEXDUMP
 #define MALLOC_HEXDUMP 1
 #endif
 
-#define ALIGNMENT 16
+#define ALIGNMENT 8
 
 #define TINY_BLOCK_MAX_SIZE 256
 #define SMALL_BLOCK_MAX_SIZE 4096

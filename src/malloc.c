@@ -65,20 +65,6 @@ static bool can_alloc(size_t size) {
   }
 }
 
-static bool is_zone_free(Zone *zone) {
-  if (zone == NULL) {
-    return (false);
-  }
-  Block *b = zone->blocks;
-  while (b != NULL) {
-    if (b->status == ALLOCATED) {
-      return (false);
-    }
-    b = b->next;
-  }
-  return (true);
-}
-
 static size_t get_os_page_size() {
 #if defined(__APPLE__) || defined(__MACH__)
   return (getpagesize());
@@ -96,7 +82,7 @@ static Block *get_block_from_ptr(void *ptr) {
   Zone *z = base;
   while (z != NULL) {
     // Validate zone pointer before dereferencing
-    if (z->size == 0) { // Sanity check
+    if (z->size == 0) {
       break;
     }
     // Check if ptr is within this zone's bounds
@@ -104,7 +90,7 @@ static Block *get_block_from_ptr(void *ptr) {
     void *zone_end = (char *)z + z->size;
     if (ptr >= zone_start && ptr < zone_end) {
       Block *b = z->blocks;
-      int block_count = 0;  // Loop detection
+      int block_count = 0;
       const int max_blocks = (z->size - sizeof(Zone)) / sizeof(Block);
       while (b != NULL && block_count < max_blocks) {
         // Validate block pointer is within zone
@@ -386,7 +372,7 @@ static void show_alloc_zone(Zone *zone) {
   Block *block = zone->blocks;
   int block_count = 0;
   const int max_blocks = zone->size / sizeof(Block);
-  
+
   while (block != NULL && block_count < max_blocks) {
     if (block->status != ALLOCATED) {
       goto continuing;
@@ -567,14 +553,10 @@ void *realloc(void *ptr, size_t size) {
 
 __attribute__((constructor))
 static void init() {
-  pthread_mutexattr_t attr;
-  pthread_mutexattr_init(&attr);
-  pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
-  pthread_mutex_init(&malloc_mutex, &attr);
-  pthread_mutexattr_destroy(&attr);
-
+  lock_malloc();
   get_zone(TINY, 0);
   get_zone(SMALL, 0);
+  unlock_malloc();
 }
 
 __attribute__((destructor))
@@ -583,11 +565,10 @@ static void clean() {
   Zone *zone = NULL;
   while (base != NULL) {
     zone = base->next;
-    if (is_zone_free(base)) {
-      munmap(base, base->size);
-    }
+    munmap(base, base->size);
     base = zone;
   }
+  base = NULL;
   unlock_malloc();
   pthread_mutex_destroy(&malloc_mutex);
 }

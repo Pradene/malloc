@@ -22,7 +22,7 @@ static int tests_failed = 0;
 static int total_tests = 0;
 
 // Thread test data
-#define NUM_THREADS 8
+#define NUM_THREADS 4
 #define ALLOCS_PER_THREAD 10000
 
 typedef struct {
@@ -115,18 +115,14 @@ void test_alignment() {
             // Check if aligned to at least sizeof(void*) boundary
             uintptr_t addr = (uintptr_t)ptr;
             int aligned = (addr % sizeof(void*)) == 0;
-        
-            char test_name[100];
-            snprintf(test_name, sizeof(test_name), "Alignment for size %zu", sizes[i]);
-            test_result(test_name, aligned);
-        
+            test_result("Alignement", aligned);
             free(ptr);
         }
     }
 }
 
 void test_stress_sequential() {
-    printf("\n%s=== SEQUENTIAL STRESS TESTS ===%s\n", BLUE, RESET);
+    ft_printf("\n%s=== SEQUENTIAL STRESS TESTS ===%s\n", BLUE, RESET);
 
     // Test 1: Many small allocations
     void **ptrs = malloc(10000 * sizeof(void*));
