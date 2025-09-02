@@ -25,11 +25,57 @@ static size_t get_block_size(Block *block) {
   return (block->size - sizeof(Block));
 }
 
+// Cycle detection for zone list using Floyd's algorithm
+static bool has_zone_cycle(Zone *start) {
+  if (start == NULL) return false;
+  
+  Zone *slow = start;
+  Zone *fast = start;
+  
+  while (fast != NULL && fast->next != NULL) {
+    slow = slow->next;
+    fast = fast->next->next;
+    if (slow == fast) {
+      return true; // Cycle detected
+    }
+  }
+  return false;
+}
+
+// Cycle detection for block list using Floyd's algorithm
+static bool has_block_cycle(Block *start) {
+  if (start == NULL) return false;
+  
+  Block *slow = start;
+  Block *fast = start;
+  
+  while (fast != NULL && fast->next != NULL) {
+    slow = slow->next;
+    fast = fast->next->next;
+    if (slow == fast) {
+      return true; // Cycle detected
+    }
+  }
+  return false;
+}
+
 static size_t get_alloc_blocks_size() {
   size_t size = 0;
   Zone *zone = base;
+  
+  // Check for cycles first
+  if (has_zone_cycle(zone)) {
+    return 0; // Return 0 on cycle detection
+  }
+  
   while (zone != NULL) {
     Block *block = zone->blocks;
+    
+    // Check for cycles in block list
+    if (has_block_cycle(block)) {
+      break; // Skip this zone on cycle detection
+    }
+    
     while (block != NULL) {
       if (block->status == ALLOCATED) {
         size = size + get_block_size(block);
@@ -44,6 +90,12 @@ static size_t get_alloc_blocks_size() {
 static size_t get_alloc_zones_size() {
   size_t size = 0;
   Zone *zone = base;
+  
+  // Check for cycles first
+  if (has_zone_cycle(zone)) {
+    return 0; // Return 0 on cycle detection
+  }
+  
   while (zone != NULL) {
     size = size + zone->size;
     zone = zone->next;
@@ -80,6 +132,12 @@ static Block *get_block_from_ptr(void *ptr) {
     return (NULL);
   }
   Zone *z = base;
+  
+  // Check for cycles in zone list
+  if (has_zone_cycle(z)) {
+    return NULL;
+  }
+  
   while (z != NULL) {
     // Validate zone pointer before dereferencing
     if (z->size == 0) {
@@ -90,11 +148,19 @@ static Block *get_block_from_ptr(void *ptr) {
     void *zone_end = (char *)z + z->size;
     if (ptr >= zone_start && ptr < zone_end) {
       Block *b = z->blocks;
-      int block_count = 0;
-      const int max_blocks = (z->size - sizeof(Zone)) / sizeof(Block);
-      while (b != NULL && block_count < max_blocks) {
+      
+      // Check for cycles in block list
+      if (has_block_cycle(b)) {
+        return NULL; // Corrupted block list
+      }
+      
+      while (b != NULL) {
         // Validate block pointer is within zone
         if ((void *)b < zone_start || (void *)b >= zone_end) {
+          break;
+        }
+        // Basic sanity check on block size
+        if (b->size < sizeof(Block) || b->size > z->size) {
           break;
         }
         void *start = get_block_start(b);
@@ -102,7 +168,6 @@ static Block *get_block_from_ptr(void *ptr) {
           return (b);
         }
         b = b->next;
-        block_count++;
       }
       // If we reach here, ptr is in zone but not found (corrupted)
       return (NULL);
@@ -117,6 +182,12 @@ static Zone *get_zone_from_block(Block *block) {
     return (NULL);
   }
   Zone *z = base;
+  
+  // Check for cycles first
+  if (has_zone_cycle(z)) {
+    return NULL;
+  }
+  
   while (z != NULL) {
     // Check if block is within this zone's bounds
     void *zone_start = (char *)z + sizeof(Zone);
@@ -199,8 +270,15 @@ static Zone *get_zone(ZoneType type, size_t size) {
     }
     base = zone;
   } else {
-    // Find correct position in sorted list
+    // Find correct position in sorted list with cycle protection
     Zone *current = base;
+    
+    // Check for cycles before traversing
+    if (has_zone_cycle(current)) {
+      munmap(memory, zone_size);
+      return NULL;
+    }
+    
     while (current->next != NULL && current->next < zone) {
       current = current->next;
     }
@@ -265,67 +343,35 @@ static void fragment_block(Block *block, size_t size) {
   }
 }
 
-static void coalesce_block(Block *block) {
-  if (block == NULL || block->status == ALLOCATED) {
-    return;
-  }
-
-  // Set status to FREE if it was FREED
-  if (block->status == FREED) {
-    block->status = FREE;
-  }
-
-  // Coalesce with next block if it's free and exactly adjacent
-  while (block->next != NULL && block->next->status != ALLOCATED) {
-    Block *next_block = block->next;
-    void *block_end = (char *)block + block->size;
-    // Check if blocks are exactly adjacent in memory
-    if ((char *)next_block - (char *)block_end < ALIGNMENT) {
-      // Merge blocks
-      void *next_block_end = (char *)next_block + next_block->size;
-      block->size = (char *)next_block_end - (char *)block;
-      block->next = next_block->next;
-      if (next_block->next != NULL) {
-        next_block->next->prev = block;
-      }
-    } else {
-      // Blocks are not adjacent, stop coalescing
-      break;
-    }
-  }
-
-  // Coalesce with previous block if it's free and exactly adjacent
-  if (block->prev != NULL && block->prev->status != ALLOCATED) {
-    Block *prev_block = block->prev;
-    void *prev_end = (char *)prev_block + prev_block->size;
-
-    // Check if blocks are exactly adjacent
-    if ((char *)block == prev_end) {
-      // Merge with previous block
-      prev_block->size += block->size;
-      prev_block->next = block->next;
-      if (block->next != NULL) {
-        block->next->prev = prev_block;
-      }
-    }
-  }
-}
-
 static Block *get_free_block_in_zone_type(ZoneType type, size_t size) {
   Zone *zone = base;
+
+  // Check for cycles first
+  if (has_zone_cycle(zone)) {
+    return NULL;
+  }
 
   while (zone != NULL) {
     if (zone->type == type && zone->size > 0) {
       Block *block = zone->blocks;
-      int block_count = 0;
-      const int max_blocks = (zone->size - sizeof(Zone)) / sizeof(Block);
+
+      // Check for cycles in block list
+      if (has_block_cycle(block)) {
+        zone = zone->next;
+        continue; // Skip this zone
+      }
 
       void *zone_start = get_zone_start(zone);
       void *zone_end = (char *)zone + zone->size;
 
-      while (block != NULL && block_count < max_blocks) {
+      while (block != NULL) {
         // Validate block is within zone bounds
         if ((void *)block < zone_start || (void *)block >= zone_end) {
+          break;
+        }
+        
+        // Basic sanity check on block size
+        if (block->size < sizeof(Block) || block->size > zone->size) {
           break;
         }
 
@@ -333,7 +379,6 @@ static Block *get_free_block_in_zone_type(ZoneType type, size_t size) {
           return (block);
         }
         block = block->next;
-        block_count++;
       }
     }
     zone = zone->next;
@@ -370,10 +415,14 @@ static void show_alloc_zone(Zone *zone, bool hex) {
 
   ft_printf("%s : %p\n", get_zone_type_str(zone->type), get_zone_start(zone));
   Block *block = zone->blocks;
-  int block_count = 0;
-  const int max_blocks = zone->size / sizeof(Block);
 
-  while (block != NULL && block_count < max_blocks) {
+  // Check for cycles in block list
+  if (has_block_cycle(block)) {
+    ft_printf("Error: Corrupted block list detected\n");
+    return;
+  }
+
+  while (block != NULL) {
     if (block->status != ALLOCATED) {
       goto continuing;
     }
@@ -386,13 +435,20 @@ static void show_alloc_zone(Zone *zone, bool hex) {
     }
   continuing:
     block = block->next;
-    block_count++;
   }
 }
 
 void show_alloc_mem() {
   lock_malloc();
   Zone *zone = base;
+  
+  // Check for cycles first
+  if (has_zone_cycle(zone)) {
+    ft_printf("Error: Corrupted zone list detected\n");
+    unlock_malloc();
+    return;
+  }
+  
   while (zone != NULL) {
     show_alloc_zone(zone, false);
     zone = zone->next;
@@ -404,6 +460,14 @@ void show_alloc_mem() {
 void show_alloc_mem_ex() {
   lock_malloc();
   Zone *zone = base;
+  
+  // Check for cycles first
+  if (has_zone_cycle(zone)) {
+    ft_printf("Error: Corrupted zone list detected\n");
+    unlock_malloc();
+    return;
+  }
+  
   while (zone != NULL) {
     show_alloc_zone(zone, true);
     zone = zone->next;
@@ -499,7 +563,6 @@ void free(void *ptr) {
       if (MALLOC_PERTURB != 0) {
         ft_memset(get_block_start(block), (0xFF & MALLOC_PERTURB), get_block_size(block));
       }
-      coalesce_block(block);
       break;
   }
 
@@ -574,10 +637,14 @@ __attribute__((destructor))
 static void clean() {
   lock_malloc();
   Zone *zone = NULL;
-  while (base != NULL) {
-    zone = base->next;
-    munmap(base, base->size);
-    base = zone;
+  
+  // Check for cycles before cleanup
+  if (!has_zone_cycle(base)) {
+    while (base != NULL) {
+      zone = base->next;
+      munmap(base, base->size);
+      base = zone;
+    }
   }
   base = NULL;
   unlock_malloc();
