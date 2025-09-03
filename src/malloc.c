@@ -22,6 +22,35 @@ static inline size_t get_block_size(Block *block) {
     return block->size - sizeof(Block);
 }
 
+static void add_to_free_list(Zone *zone, Block *block) {
+    if (!zone || !block) return;
+
+    block->free_next = zone->free_blocks;
+    block->free_prev = NULL;
+
+    if (zone->free_blocks) {
+        zone->free_blocks->free_prev = block;
+    }
+    zone->free_blocks = block;
+}
+
+static void remove_from_free_list(Zone *zone, Block *block) {
+    if (!zone || !block) return;
+
+    if (block->free_prev) {
+        block->free_prev->free_next = block->free_next;
+    } else {
+        zone->free_blocks = block->free_next;
+    }
+
+    if (block->free_next) {
+        block->free_next->free_prev = block->free_prev;
+    }
+
+    block->free_prev = NULL;
+    block->free_next = NULL;
+}
+
 static bool has_zone_cycle(Zone *start) {
     if (!start || !start->next) return false;
 
@@ -95,13 +124,19 @@ static bool can_alloc(size_t size) {
 }
 
 static size_t get_os_page_size(void) {
+    static size_t page_size = 0;
+
+    if (page_size == 0) {
 #if defined(__APPLE__) || defined(__MACH__)
-    return getpagesize();
+        page_size = getpagesize();
 #elif defined(unix) || defined(__unix) || defined(__unix__)
-    return sysconf(_SC_PAGESIZE);
+        page_size = sysconf(_SC_PAGESIZE);
 #else
-    return 4096;
+        page_size = 4096;
 #endif
+    }
+
+    return page_size;
 }
 
 static Block *get_block_from_ptr(void *ptr) {
@@ -132,7 +167,7 @@ static Block *get_block_from_ptr(void *ptr) {
                 }
                 block = block->next;
             }
-            return NULL; // In zone but not found
+            return NULL;
         }
         zone = zone->next;
     }
@@ -192,8 +227,8 @@ static Zone *get_zone(ZoneType type, size_t size) {
     Zone *zone = (Zone *)memory;
     zone->size = zone_size;
     zone->type = type;
+    zone->free_blocks = NULL;
 
-    // Optimized sorted insertion
     if (!base || zone < base) {
         zone->prev = NULL;
         zone->next = base;
@@ -221,7 +256,11 @@ static Zone *get_zone(ZoneType type, size_t size) {
     block->status = FREE;
     block->prev = NULL;
     block->next = NULL;
+    block->free_prev = NULL;
+    block->free_next = NULL;
     zone->blocks = block;
+
+    add_to_free_list(zone, block);
 
     return zone;
 }
@@ -229,10 +268,15 @@ static Zone *get_zone(ZoneType type, size_t size) {
 static void fragment_block(Block *block, size_t size) {
     if (!block || size < sizeof(Block)) return;
 
+    Zone *zone = get_zone_from_block(block);
+    if (!zone) return;
+
     size_t aligned_size = align(size, ALIGNMENT);
     if (aligned_size > block->size) aligned_size = block->size;
 
     size_t remaining = block->size - aligned_size;
+
+    remove_from_free_list(zone, block);
 
     if (remaining >= sizeof(Block) + ALIGNMENT) {
         Block *new_block = (Block *)((char *)block + aligned_size);
@@ -240,9 +284,13 @@ static void fragment_block(Block *block, size_t size) {
         new_block->status = FREE;
         new_block->next = block->next;
         new_block->prev = block;
+        new_block->free_prev = NULL;
+        new_block->free_next = NULL;
 
         if (block->next) block->next->prev = new_block;
         block->next = new_block;
+
+        add_to_free_list(zone, new_block);
     }
 
     block->size = aligned_size;
@@ -259,16 +307,12 @@ static Block *get_free_block_in_zone_type(ZoneType type, size_t size) {
 
     while (zone) {
         if (zone->type == type && zone->size > 0) {
-            Block *block = zone->blocks;
-            if (has_block_cycle(block)) {
-                zone = zone->next;
-                continue;
-            }
-
-            void *zone_start = get_zone_start(zone);
-            void *zone_end = (char *)zone + zone->size;
+            Block *block = zone->free_blocks;
 
             while (block) {
+                void *zone_start = get_zone_start(zone);
+                void *zone_end = (char *)zone + zone->size;
+
                 if ((void *)block < zone_start || (void *)block >= zone_end ||
                     block->size < sizeof(Block) || block->size > zone->size) {
                     break;
@@ -277,12 +321,46 @@ static Block *get_free_block_in_zone_type(ZoneType type, size_t size) {
                 if (block->status == FREE && block->size >= size) {
                     return block;
                 }
-                block = block->next;
+                block = block->free_next;
             }
         }
         zone = zone->next;
     }
     return NULL;
+}
+
+static void coalesce_free_blocks(Zone *zone, Block *block) {
+    if (!zone || !block || block->status != FREE) return;
+
+    while (block->next && block->next->status == FREE) {
+        Block *next = block->next;
+
+        if ((char *)block + block->size == (char *)next) {
+            remove_from_free_list(zone, next);
+
+            block->size += next->size;
+            block->next = next->next;
+            if (next->next) next->next->prev = block;
+        } else {
+            break;
+        }
+    }
+
+    while (block->prev && block->prev->status == FREE) {
+        Block *prev = block->prev;
+
+        if ((char *)prev + prev->size == (char *)block) {
+            remove_from_free_list(zone, block);
+
+            prev->size += block->size;
+            prev->next = block->next;
+            if (block->next) block->next->prev = prev;
+
+            block = prev;
+        } else {
+            break;
+        }
+    }
 }
 
 static void print_hex_dump(void *ptr, size_t size) {
@@ -442,11 +520,20 @@ void free(void *ptr) {
         return;
     }
 
-    block->status = FREED;
+    Zone *zone = get_zone_from_block(block);
+    if (!zone) {
+        unlock_malloc();
+        return;
+    }
+
+    block->status = FREE;
     if (MALLOC_PERTURB) {
         ft_memset(get_block_start(block), 0xFF & MALLOC_PERTURB,
                   get_block_size(block));
     }
+
+    add_to_free_list(zone, block);
+    coalesce_free_blocks(zone, block);
 
     unlock_malloc();
 }
@@ -508,16 +595,15 @@ static void init(void) {
 __attribute__((destructor))
 static void clean(void) {
     lock_malloc();
-
     if (!has_zone_cycle(base)) {
-        while (base) {
-            Zone *next = base->next;
+      Zone *next = NULL;
+      while (base) {
+            next = base->next;
             munmap(base, base->size);
             base = next;
         }
     }
     base = NULL;
-
     unlock_malloc();
     pthread_mutex_destroy(&malloc_mutex);
 }

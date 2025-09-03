@@ -37,12 +37,15 @@ typedef struct __attribute__((aligned(ALIGNMENT))) Block {
   size_t size;
   struct Block *prev;
   struct Block *next;
+  struct Block *free_prev;
+  struct Block *free_next;
 } Block;
 
 typedef struct __attribute__((aligned(ALIGNMENT))) Zone {
   size_t size;
   ZoneType type;
   Block *blocks;
+  Block *free_blocks;
   struct Zone *prev;
   struct Zone *next;
 } Zone;
